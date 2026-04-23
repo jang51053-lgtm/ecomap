@@ -1,0 +1,1497 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>생태지도 탐험</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            background-color: #fdf2f8; 
+            margin: 0;
+            overflow-x: hidden;
+            overflow-y: auto;
+        }
+        body.edit-mode {
+            overflow: hidden; 
+        }
+
+        .map-viewport {
+            width: 100%;
+            height: 80vh; 
+            overflow: hidden; 
+            position: relative;
+            margin: 2rem auto;
+            max-width: 1400px;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px -10px rgba(236, 72, 153, 0.4); 
+            border: 3px solid #f472b6; 
+            background-color: #ffffff; 
+        }
+        
+        body:not(.edit-mode) .map-viewport {
+            height: auto;
+            overflow: visible;
+        }
+
+        .map-wrapper {
+            position: relative;
+            width: 100%;
+            transform-origin: 0 0;
+            transition: transform 0.1s ease-out; 
+        }
+
+        .map-image {
+            width: 100%;
+            height: auto;
+            display: block;
+            pointer-events: none;
+            user-select: none;
+        }
+
+        .svg-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+        }
+
+        .region-polygon {
+            fill: rgba(34, 197, 94, 0);
+            stroke: rgba(255, 255, 255, 0.3);
+            stroke-width: 2;
+            cursor: pointer;
+            transition: all 0.3s ease-in-out;
+            pointer-events: auto;
+        }
+
+        body:not(.edit-mode) .region-polygon:hover {
+            fill: rgba(244, 114, 182, 0.4); 
+            stroke: rgba(255, 255, 255, 0.9);
+            filter: drop-shadow(0 0 8px rgba(244, 114, 182, 0.8));
+        }
+        
+        body.edit-mode .region-polygon {
+            fill: rgba(255, 255, 255, 0.3);
+            stroke: rgba(244, 114, 182, 0.8);
+            stroke-dasharray: 4;
+        }
+        body.edit-mode .region-polygon:hover {
+            fill: rgba(236, 72, 153, 0.3); 
+        }
+
+        body.edit-mode .region-polygon.selected {
+            fill: rgba(236, 72, 153, 0.5) !important; 
+            stroke: rgba(219, 39, 119, 1) !important;
+            stroke-dasharray: 0 !important;
+            filter: drop-shadow(0 0 8px rgba(236, 72, 153, 0.8));
+            z-index: 15;
+        }
+
+        .map-marker {
+            position: absolute;
+            transform: translate(-50%, -50%);
+            z-index: 20;
+            pointer-events: none; 
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            color: white;
+            text-shadow: 1px 1px 3px black, -1px -1px 3px black;
+            font-weight: bold;
+            font-size: 0.9rem;
+        }
+
+        body.edit-mode .map-marker {
+            pointer-events: auto;
+        }
+        body.edit-mode .map-marker:hover {
+            filter: brightness(1.2);
+            transform: translate(-50%, -50%) scale(1.1);
+            transition: transform 0.2s;
+        }
+        
+        body.edit-mode .map-marker.selected .marker-icon {
+            border-color: #ec4899; 
+            box-shadow: 0 0 10px #ec4899;
+        }
+
+        .marker-icon {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, #10b981, #047857);
+            border: 2px solid #fff;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-bottom: 4px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.5);
+        }
+
+        #info-modal, #obs-detail-modal {
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+        #info-modal.active, #obs-detail-modal.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .modal-content-bg {
+            background: #ffffff;
+            border: 2px solid #fbcfe8;
+        }
+
+        .edit-handle { transition: r 0.1s ease; }
+        .edit-handle:hover { r: 8; }
+        
+        .tool-btn.active-tool {
+            background-color: #ec4899; 
+            color: white;
+            border-color: #db2777;
+        }
+        
+        .gallery-item:hover img {
+            transform: scale(1.05);
+        }
+    </style>
+</head>
+<body class="text-gray-800">
+
+    <div id="loading-overlay" class="fixed inset-0 z-[300] flex flex-col items-center justify-center bg-pink-50/95 backdrop-blur-sm transition-opacity duration-500">
+        <div class="text-6xl animate-bounce mb-4">🌱</div>
+        <h2 class="text-2xl font-black text-pink-500 mb-2">생태지도 불러오는 중...</h2>
+        <p class="text-gray-500 font-bold text-sm">데이터를 안전하게 동기화하고 있어요!</p>
+    </div>
+
+    <button id="toggle-edit-btn" class="fixed top-4 right-4 z-[90] bg-white hover:bg-pink-50 text-pink-600 px-5 py-2.5 rounded-full shadow-lg font-bold transition-colors border-2 border-pink-200 flex items-center gap-2">
+        ✏️ 편집 스튜디오
+    </button>
+
+    <div id="edit-panel" class="fixed top-0 right-0 h-full w-80 bg-white border-l border-pink-200 shadow-2xl transform translate-x-full transition-transform duration-300 z-[100] flex flex-col pointer-events-auto">
+        <div class="p-4 border-b border-pink-200 flex justify-between items-center bg-pink-50">
+            <h2 class="text-lg font-black text-pink-600">⚙️ 지도 에디터</h2>
+            <button id="close-edit-btn" class="text-gray-400 hover:text-pink-600 font-bold text-xl">✕</button>
+        </div>
+        
+        <div class="p-4 flex-1 overflow-y-auto">
+            <h3 class="text-sm font-bold text-pink-500 mb-3">1. 도구 선택</h3>
+            <div class="grid grid-cols-2 gap-2 mb-4">
+                <button class="tool-btn bg-gray-100 text-gray-600 border border-gray-200 py-2 rounded text-sm font-bold transition-colors" data-tool="select">🎯 구역 선택</button>
+                <button class="tool-btn active-tool bg-pink-500 text-white border border-pink-600 py-2 rounded text-sm font-bold transition-colors" data-tool="move">👆 점 이동</button>
+                <button class="tool-btn bg-gray-100 text-gray-600 border border-gray-200 py-2 rounded text-sm font-bold transition-colors" data-tool="draw">✏️ 새 폴리곤</button>
+                <button class="tool-btn bg-gray-100 text-gray-600 border border-gray-200 py-2 rounded text-sm font-bold transition-colors" data-tool="marker">📍 마커 추가</button>
+                <button class="tool-btn bg-gray-100 text-gray-600 border border-gray-200 py-2 rounded text-sm font-bold transition-colors hover:bg-red-100 hover:text-red-600" data-tool="delete">🗑️ 지우개</button>
+                <button class="tool-btn bg-gray-100 text-gray-600 border border-gray-200 py-2 rounded text-sm font-bold transition-colors" data-tool="pan">✋ 드래그 (이동)</button>
+            </div>
+
+            <div id="marker-options" class="hidden mb-4 p-3 bg-pink-50 rounded border border-pink-200">
+                <div class="flex justify-between items-center mb-2">
+                    <label class="block text-xs text-gray-600 font-bold">구역 속성</label>
+                    <span id="selected-poly-id" class="text-[10px] text-pink-500 font-mono">선택 안됨</span>
+                </div>
+                
+                <div class="flex gap-3 mb-3 text-sm text-gray-700 flex-wrap">
+                    <label class="cursor-pointer flex items-center gap-1"><input type="radio" name="m-emoji" value="🌳" checked> 🌳</label>
+                    <label class="cursor-pointer flex items-center gap-1"><input type="radio" name="m-emoji" value="🌸"> 🌸</label>
+                    <label class="cursor-pointer flex items-center gap-1"><input type="radio" name="m-emoji" value="💧"> 💧</label>
+                    <label class="cursor-pointer flex items-center gap-1"><input type="radio" name="m-emoji" value="🏫"> 🏫</label>
+                </div>
+                
+                <input type="text" id="m-name" class="w-full bg-white text-gray-800 p-1.5 rounded text-sm border border-pink-200 focus:border-pink-500 outline-none mb-3" placeholder="예: 비밀의 숲">
+                
+                <div id="vegetation-inputs-container">
+                    <label class="block text-xs text-gray-600 font-bold mb-1">생태 데이터 (숫자 입력)</label>
+                    <div class="grid grid-cols-2 gap-2 mb-3">
+                        <div>
+                            <span class="block text-[10px] text-gray-500 text-center">큰 나무</span>
+                            <input type="number" id="m-large" class="w-full bg-white text-gray-800 p-1 rounded text-sm border border-pink-200 text-center focus:border-pink-500 outline-none" value="0">
+                        </div>
+                        <div>
+                            <span class="block text-[10px] text-gray-500 text-center">작은 나무</span>
+                            <input type="number" id="m-small" class="w-full bg-white text-gray-800 p-1 rounded text-sm border border-pink-200 text-center focus:border-pink-500 outline-none" value="0">
+                        </div>
+                        <div>
+                            <span class="block text-[10px] text-gray-500 text-center">꽃</span>
+                            <input type="number" id="m-flower" class="w-full bg-white text-gray-800 p-1 rounded text-sm border border-pink-200 text-center focus:border-pink-500 outline-none" value="0">
+                        </div>
+                        <div>
+                            <span class="block text-[10px] text-gray-500 text-center">동물</span>
+                            <input type="number" id="m-animal" class="w-full bg-white text-gray-800 p-1 rounded text-sm border border-pink-200 text-center focus:border-pink-500 outline-none" value="0">
+                        </div>
+                    </div>
+                </div>
+                <button id="update-props-btn" class="w-full bg-pink-500 hover:bg-pink-600 text-white text-xs font-bold py-2 rounded hidden">속성 저장(업데이트)</button>
+            </div>
+
+            <div class="bg-pink-50 p-3 rounded-lg border border-pink-200 text-xs text-gray-600 mb-6 leading-relaxed" id="tool-help">
+                점을 드래그하여 모양을 수정하세요.
+            </div>
+
+            <h3 class="text-sm font-bold text-pink-500 mb-3 flex justify-between items-center">
+                <span>2. 추출 코드</span>
+                <span id="output-mode-label" class="text-[10px] bg-gray-200 px-2 py-0.5 rounded text-gray-600 border border-gray-300">전체 데이터</span>
+            </h3>
+            
+            <label class="block text-[10px] text-gray-500 mb-1">SVG 폴리곤 좌표</label>
+            <textarea id="out-poly" class="w-full h-20 bg-gray-50 text-gray-700 text-[10px] p-2 rounded border border-gray-300 font-mono mb-3" readonly></textarea>
+            
+            <label class="block text-[10px] text-gray-500 mb-1">마커(Marker) HTML</label>
+            <textarea id="out-marker" class="w-full h-20 bg-gray-50 text-gray-700 text-[10px] p-2 rounded border border-gray-300 font-mono mb-3" readonly></textarea>
+            
+            <label class="block text-[10px] text-gray-500 mb-1">JS 생태 정보 (데이터 백업용)</label>
+            <textarea id="out-data" class="w-full h-20 bg-gray-50 text-gray-700 text-[10px] p-2 rounded border border-gray-300 font-mono" readonly></textarea>
+            <p class="text-[10px] text-pink-500 mt-1">※ 파이어베이스 연동 시 데이터는 자동 저장되므로 SVG와 마커 HTML만 복사하시면 됩니다.</p>
+        </div>
+    </div>
+
+    <div id="main-view">
+        <header class="text-center py-6 bg-white border-b border-pink-200 shadow-sm">
+            <h1 class="text-3xl md:text-4xl font-black text-pink-500 tracking-wider" style="text-shadow: 0 0 15px rgba(236, 72, 153, 0.2);">
+                장성중앙초 학교 숲 지도
+            </h1>
+        </header>
+
+        <main class="px-4">
+            <div class="map-viewport" id="map-viewport">
+                
+                <div class="absolute top-4 left-4 md:top-6 md:left-6 z-[30] bg-white/95 backdrop-blur-md border-2 border-pink-300 rounded-xl shadow-lg p-3 md:p-4 w-40 md:w-52 pointer-events-none select-none">
+                    <h2 class="text-[11px] md:text-[13px] font-black text-pink-600 mb-2.5 flex items-center justify-center gap-1 leading-tight text-center border-b border-pink-100 pb-2">
+                        <span>🌱</span> 지금까지 찾은<br>우리의 자연
+                    </h2>
+                    <div class="grid grid-cols-2 gap-1.5 md:gap-2">
+                        <div class="bg-green-50 rounded p-1.5 text-center border border-green-100">
+                            <span class="block text-[9px] md:text-[10px] text-gray-500 font-bold mb-0.5">큰 나무</span>
+                            <span id="total-large-trees" class="text-xs md:text-base font-black text-green-600">0</span>
+                        </div>
+                        <div class="bg-green-50 rounded p-1.5 text-center border border-green-100">
+                            <span class="block text-[9px] md:text-[10px] text-gray-500 font-bold mb-0.5">작은 나무</span>
+                            <span id="total-small-trees" class="text-xs md:text-base font-black text-green-600">0</span>
+                        </div>
+                        <div class="bg-pink-50 rounded p-1.5 text-center border border-pink-100">
+                            <span class="block text-[9px] md:text-[10px] text-gray-500 font-bold mb-0.5">꽃</span>
+                            <span id="total-flowers" class="text-xs md:text-base font-black text-pink-500">0</span>
+                        </div>
+                        <div class="bg-yellow-50 rounded p-1.5 text-center border border-yellow-100">
+                            <span class="block text-[9px] md:text-[10px] text-gray-500 font-bold mb-0.5">동물</span>
+                            <span id="total-animals" class="text-xs md:text-base font-black text-yellow-600">0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="map-wrapper" id="map-wrapper">
+                    <img src="https://i.imgur.com/J1ggWBW.png" alt="월드 생태지도" class="map-image">
+                    
+                    <svg class="svg-overlay" id="svg-overlay" viewBox="0 0 1920 1080" preserveAspectRatio="none">
+                        <polygon class="region-polygon" data-id="region-1776323837744" points="430,597 480,589 460,478 443,413 436,303 447,240 468,206 542,187 676,176 684,127 656,120 580,125 529,147 493,175 420,231 388,268 356,313 339,365 316,407 329,453 348,528 " />
+                        <polygon class="region-polygon" data-id="region-1776324154295" points="435,612 480,612 513,719 644,769 910,784 1056,842 1033,877 1011,875 991,853 884,834 529,809 " />
+                        <polygon class="region-polygon" data-id="region-1776324211556" points="972,764 1078,812 1156,757 " />
+                        <polygon class="region-polygon" data-id="region-1776324246472" points="1006,969 1490,748 1548,650 1500,634 1493,659 1456,663 1428,715 1366,738 1314,765 1265,789 1245,788 1193,801 1133,836 1101,859 " />
+                        <polygon class="region-polygon" data-id="region-1776324296444" points="1145,36 1168,88 1401,93 1408,172 1396,182 1406,261 1476,261 1481,372 1443,377 1434,403 1394,407 1399,423 1493,427 1493,469 1537,478 1555,418 1602,354 1593,316 1604,299 1590,251 1604,207 1642,161 1627,86 1535,51 1473,38 1372,31 1185,25 " />
+                        <polygon class="region-polygon" data-id="region-1776324354459" points="631,439 637,388 910,377 945,414 1061,414 1108,384 1275,383 1294,394 1300,423 " />
+                        <polygon class="region-polygon" data-id="region-1776324377079" points="636,212 1004,196 1006,236 1044,232 1046,196 1367,187 1372,259 1151,269 1145,207 1064,209 1061,241 631,261 " />
+                    </svg>
+
+                <div class="map-marker" data-linked-id="region-1776323837744" style="top: 41%; left: 21.2%;">
+                    <div class="marker-icon">🌳</div><span>학교 서쪽의 숲</span>
+                </div>
+                <div class="map-marker" data-linked-id="region-1776324154295" style="top: 73.3%; left: 31.5%;">
+                    <div class="marker-icon">🌳</div><span>학교 남쪽의 숲</span>
+                </div>
+                <div class="map-marker" data-linked-id="region-1776324211556" style="top: 72.5%; left: 56%;">
+                    <div class="marker-icon">🌳</div><span>학교 교통섬의 숲</span>
+                </div>
+                <div class="map-marker" data-linked-id="region-1776324246472" style="top: 74.1%; left: 68.5%;">
+                    <div class="marker-icon">🌳</div><span>학교 시작의 숲</span>
+                </div>
+                <div class="map-marker" data-linked-id="region-1776324296444" style="top: 28.8%; left: 80%;">
+                    <div class="marker-icon">🌳</div><span>학교 동쪽의 숲</span>
+                </div>
+                <div class="map-marker" data-linked-id="region-1776324354459" style="top: 38.2%; left: 46.2%;">
+                    <div class="marker-icon">🌳</div><span>학교 중앙의 숲</span>
+                </div>
+                <div class="map-marker" data-linked-id="region-1776324377079" style="top: 21.1%; left: 50.2%;">
+                    <div class="marker-icon">🌳</div><span>학교 비밀의 숲</span>
+                </div>
+            </div>
+        </main>
+    </div> <div id="explore-view" class="hidden min-h-screen bg-pink-50 p-4 md:p-8 z-40 relative">
+        <div class="max-w-5xl mx-auto flex justify-between items-center mb-6">
+            <button id="back-to-map-btn" class="bg-white hover:bg-pink-50 text-pink-600 border border-pink-200 px-4 py-2 rounded-lg font-bold flex items-center gap-2 transition-colors shadow-sm">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                지도로 돌아가기
+            </button>
+            
+            <div class="flex gap-2">
+                <button id="detail-edit-btn" class="bg-pink-500 hover:bg-pink-600 text-white px-4 py-2 rounded-lg font-bold transition-colors shadow-sm">
+                    ✏️ 내용 편집
+                </button>
+                <button id="detail-save-btn" class="hidden bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-lg font-bold transition-colors shadow-sm">
+                    💾 저장 및 편집 종료
+                </button>
+            </div>
+        </div>
+        
+        <div class="max-w-5xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden border border-pink-100">
+            <div class="h-48 bg-gradient-to-r from-pink-300 to-rose-300 flex items-center justify-center">
+                <span id="explore-emoji" class="text-8xl drop-shadow-md">🌍</span>
+            </div>
+            
+            <div class="p-8 md:p-12">
+                <h1 id="explore-title" class="text-4xl font-black text-gray-800 mb-6">지역 이름</h1>
+                
+                <div id="detail-view-area">
+                    <p id="explore-desc" class="text-gray-600 text-lg leading-relaxed mb-8 border-l-4 border-pink-400 pl-4 whitespace-pre-wrap">여기에 상세 설명이 들어갑니다.</p>
+                    
+                    <div id="explore-vegetation-view" class="flex justify-between bg-pink-50/50 p-6 rounded-xl border border-pink-100 text-center mb-10 shadow-sm">
+                        <div class="flex-1">
+                            <span class="block text-sm text-gray-500 mb-2">큰 나무</span>
+                            <div><span id="explore-large-trees" class="font-black text-green-500 text-2xl md:text-3xl">0</span><span class="text-sm text-gray-400 ml-1">그루</span></div>
+                        </div>
+                        <div class="w-px bg-pink-200"></div>
+                        <div class="flex-1">
+                            <span class="block text-sm text-gray-500 mb-2">작은 나무</span>
+                            <div><span id="explore-small-trees" class="font-black text-green-500 text-2xl md:text-3xl">0</span><span class="text-sm text-gray-400 ml-1">그루</span></div>
+                        </div>
+                        <div class="w-px bg-pink-200"></div>
+                        <div class="flex-1">
+                            <span class="block text-sm text-gray-500 mb-2">꽃</span>
+                            <div><span id="explore-flowers" class="font-black text-pink-500 text-2xl md:text-3xl">0</span><span class="text-sm text-gray-400 ml-1">송이</span></div>
+                        </div>
+                        <div class="w-px bg-pink-200"></div>
+                        <div class="flex-1">
+                            <span class="block text-sm text-gray-500 mb-2">동물</span>
+                            <div><span id="explore-animals" class="font-black text-yellow-500 text-2xl md:text-3xl">0</span><span class="text-sm text-gray-400 ml-1">마리</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="detail-edit-area" class="hidden mb-10 bg-pink-50 p-6 rounded-xl border border-pink-300">
+                    <h3 class="text-pink-600 font-bold mb-4">상세 설명 편집</h3>
+                    <textarea id="edit-explore-desc" class="w-full h-32 bg-white text-gray-800 p-4 rounded border border-pink-200 focus:border-pink-500 outline-none mb-6"></textarea>
+                    
+                    <h3 class="text-pink-600 font-bold mb-4">생태 데이터 편집</h3>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div>
+                            <label class="block text-xs text-gray-600 mb-1">큰 나무 수</label>
+                            <input type="number" id="edit-large-trees" class="w-full bg-white text-gray-800 p-2 rounded border border-pink-200 focus:border-pink-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-600 mb-1">작은 나무 수</label>
+                            <input type="number" id="edit-small-trees" class="w-full bg-white text-gray-800 p-2 rounded border border-pink-200 focus:border-pink-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-600 mb-1">꽃 수</label>
+                            <input type="number" id="edit-flowers" class="w-full bg-white text-gray-800 p-2 rounded border border-pink-200 focus:border-pink-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-600 mb-1">동물 수</label>
+                            <input type="number" id="edit-animals" class="w-full bg-white text-gray-800 p-2 rounded border border-pink-200 focus:border-pink-500 outline-none">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mt-12 pt-8 border-t border-pink-100">
+                    <h2 class="text-3xl font-black text-gray-800 mb-8 text-center">관찰 일지 갤러리</h2>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        
+                        <div class="bg-white rounded-xl p-6 border border-green-200 shadow-md">
+                            <h3 class="text-xl font-bold text-green-600 mb-4 flex items-center gap-2">
+                                <span>🌿</span> 식물 갤러리
+                            </h3>
+                            
+                            <div id="plant-board-form-area" class="hidden bg-green-50 rounded-lg p-5 border border-green-200 mb-6">
+                                <h4 class="text-sm font-bold text-green-700 mb-3 border-b border-green-200 pb-2">새로운 식물 등록</h4>
+                                <div class="grid grid-cols-2 gap-3 mb-3">
+                                    <input type="text" id="plant-obs-reporter" class="bg-white text-gray-800 p-2 rounded text-sm outline-none focus:border-green-500 border border-green-200" placeholder="보고자 이름">
+                                    <input type="date" id="plant-obs-date" class="bg-white text-gray-800 p-2 rounded text-sm outline-none focus:border-green-500 border border-green-200">
+                                </div>
+                                <input type="text" id="plant-obs-name" class="w-full bg-white text-gray-800 p-2 rounded text-sm outline-none focus:border-green-500 border border-green-200 mb-3" placeholder="식물/꽃 이름">
+                                <textarea id="plant-obs-desc" class="w-full bg-white text-gray-800 p-2 rounded text-sm outline-none focus:border-green-500 border border-green-200 mb-3 min-h-[60px]" placeholder="관찰 설명"></textarea>
+                                <input type="file" id="plant-obs-img" accept="image/*" class="w-full text-xs text-gray-500 file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:font-bold file:bg-green-100 file:text-green-700 hover:file:bg-green-200 mb-3 cursor-pointer">
+                                <div class="flex justify-end">
+                                    <button id="plant-obs-submit-btn" class="bg-green-500 hover:bg-green-600 text-white px-5 py-1.5 rounded font-bold text-sm transition-colors">등록하기</button>
+                                </div>
+                            </div>
+
+                            <div id="plant-board-list" class="grid grid-cols-2 lg:grid-cols-3 gap-3 max-h-[400px] overflow-y-auto pr-2"></div>
+                        </div>
+
+                        <div class="bg-white rounded-xl p-6 border border-yellow-200 shadow-md">
+                            <h3 class="text-xl font-bold text-yellow-500 mb-4 flex items-center gap-2">
+                                <span>🐾</span> 동물 갤러리
+                            </h3>
+                            
+                            <div id="animal-board-form-area" class="hidden bg-yellow-50 rounded-lg p-5 border border-yellow-200 mb-6">
+                                <h4 class="text-sm font-bold text-yellow-600 mb-3 border-b border-yellow-200 pb-2">새로운 동물 등록</h4>
+                                <div class="grid grid-cols-2 gap-3 mb-3">
+                                    <input type="text" id="animal-obs-reporter" class="bg-white text-gray-800 p-2 rounded text-sm outline-none focus:border-yellow-400 border border-yellow-200" placeholder="보고자 이름">
+                                    <input type="date" id="animal-obs-date" class="bg-white text-gray-800 p-2 rounded text-sm outline-none focus:border-yellow-400 border border-yellow-200">
+                                </div>
+                                <input type="text" id="animal-obs-name" class="w-full bg-white text-gray-800 p-2 rounded text-sm outline-none focus:border-yellow-400 border border-yellow-200 mb-3" placeholder="곤충/동물 이름">
+                                <textarea id="animal-obs-desc" class="w-full bg-white text-gray-800 p-2 rounded text-sm outline-none focus:border-yellow-400 border border-yellow-200 mb-3 min-h-[60px]" placeholder="관찰 설명"></textarea>
+                                <input type="file" id="animal-obs-img" accept="image/*" class="w-full text-xs text-gray-500 file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:font-bold file:bg-yellow-100 file:text-yellow-700 hover:file:bg-yellow-200 mb-3 cursor-pointer">
+                                <div class="flex justify-end">
+                                    <button id="animal-obs-submit-btn" class="bg-yellow-400 hover:bg-yellow-500 text-white px-5 py-1.5 rounded font-bold text-sm transition-colors">등록하기</button>
+                                </div>
+                            </div>
+
+                            <div id="animal-board-list" class="grid grid-cols-2 lg:grid-cols-3 gap-3 max-h-[400px] overflow-y-auto pr-2"></div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="info-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+        <div class="modal-content-bg relative w-full max-w-2xl rounded-xl p-1 shadow-2xl">
+            <div class="bg-white rounded-lg p-6">
+                <button id="close-modal-btn" class="absolute top-4 right-4 text-gray-400 hover:text-pink-500 text-xl font-bold">✕</button>
+                <div class="flex flex-col md:flex-row gap-6">
+                    <div class="w-full md:w-1/2 flex-shrink-0">
+                        <div class="aspect-video bg-pink-50 border border-pink-100 rounded-lg flex items-center justify-center"><span id="modal-image-emoji" class="text-6xl drop-shadow-sm">🌍</span></div>
+                    </div>
+                    <div class="w-full md:w-1/2 flex flex-col justify-center">
+                        <h2 id="modal-title" class="text-2xl font-black text-gray-800 mb-2 pb-2 border-b border-pink-100">이름</h2>
+                        <h3 id="modal-subtitle" class="text-pink-500 font-bold mb-4 hidden">서브타이틀</h3>
+                        <p id="modal-desc" class="text-gray-600 text-sm leading-relaxed">설명</p>
+
+                        <div id="modal-vegetation-info" class="flex justify-between bg-pink-50 p-3 rounded-lg border border-pink-100 mt-5 text-center">
+                            <div class="flex-1">
+                                <span class="block text-xs text-gray-500 mb-1">큰 나무</span>
+                                <div><span id="modal-large-trees" class="font-bold text-green-500 text-lg">0</span></div>
+                            </div>
+                            <div class="w-px bg-pink-200"></div>
+                            <div class="flex-1">
+                                <span class="block text-xs text-gray-500 mb-1">작은 나무</span>
+                                <div><span id="modal-small-trees" class="font-bold text-green-500 text-lg">0</span></div>
+                            </div>
+                            <div class="w-px bg-pink-200"></div>
+                            <div class="flex-1">
+                                <span class="block text-xs text-gray-500 mb-1">꽃</span>
+                                <div><span id="modal-flowers" class="font-bold text-pink-500 text-lg">0</span></div>
+                            </div>
+                            <div class="w-px bg-pink-200"></div>
+                            <div class="flex-1">
+                                <span class="block text-xs text-gray-500 mb-1">동물</span>
+                                <div><span id="modal-animals" class="font-bold text-yellow-500 text-lg">0</span></div>
+                            </div>
+                        </div>
+
+                        <button id="explore-btn" class="w-full bg-pink-500 hover:bg-pink-600 text-white font-black py-3 rounded-lg mt-5 shadow-md transition-all flex justify-center items-center gap-2">
+                            <span>탐구하기</span>
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="obs-detail-modal" class="fixed inset-0 z-[150] flex items-center justify-center bg-black/60 backdrop-blur-sm hidden p-4">
+        <div class="bg-white border border-pink-200 rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
+            <div class="relative bg-gray-100 flex-shrink-0 h-64 md:h-80 flex items-center justify-center border-b border-pink-100">
+                <img id="obs-detail-img" class="w-full h-full object-contain">
+                <button id="obs-close-btn" class="absolute top-3 right-3 bg-white/80 text-gray-800 p-2 rounded-full hover:bg-white transition-colors backdrop-blur-sm shadow">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div class="p-6 overflow-y-auto">
+                <h3 id="obs-detail-name" class="text-2xl font-black text-gray-800 mb-4">생물 이름</h3>
+                <div class="flex flex-col gap-2 mb-6 border-b border-pink-100 pb-4">
+                    <p class="text-sm text-gray-600"><span class="text-gray-400 w-16 inline-block font-bold">보고자</span> <span id="obs-detail-reporter" class="text-pink-600 font-bold"></span></p>
+                    <p class="text-sm text-gray-600"><span class="text-gray-400 w-16 inline-block font-bold">촬영일</span> <span id="obs-detail-date" class="text-gray-700"></span></p>
+                </div>
+                <p class="text-xs text-gray-400 font-bold mb-2">관찰 설명</p>
+                <p id="obs-detail-desc" class="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">설명</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="password-modal" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-sm hidden">
+        <div class="bg-white border border-pink-200 p-6 rounded-xl shadow-2xl text-center w-80">
+            <h3 id="pw-modal-title" class="text-gray-800 font-black mb-2 text-lg">⚙️ 권한 확인</h3>
+            <p id="pw-modal-desc" class="text-xs text-gray-500 mb-5">비밀번호를 입력하세요.</p>
+            <input type="password" id="admin-pw-input" class="bg-pink-50 text-gray-800 p-3 rounded border border-pink-200 w-full mb-2 focus:border-pink-500 outline-none text-center font-black tracking-widest" placeholder="****">
+            <p id="pw-error-msg" class="text-red-500 text-xs hidden mb-4 font-bold">비밀번호가 일치하지 않습니다.</p>
+            <div class="flex gap-2 justify-center mt-4">
+                <button id="pw-submit-btn" class="bg-pink-500 hover:bg-pink-600 text-white px-4 py-2 rounded font-bold flex-1 transition-colors shadow-sm">확인</button>
+                <button id="pw-cancel-btn" class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded font-bold flex-1 transition-colors shadow-sm">취소</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="alert-modal" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-sm hidden">
+        <div class="bg-white border border-pink-200 p-6 rounded-xl shadow-2xl text-center w-80">
+            <h3 class="text-gray-800 font-black mb-4">안내</h3>
+            <p id="alert-msg" class="text-gray-600 text-sm mb-6 leading-relaxed"></p>
+            <button id="alert-close-btn" class="bg-pink-500 hover:bg-pink-600 text-white px-6 py-2 rounded-lg font-bold transition-colors w-full shadow-sm">확인</button>
+        </div>
+    </div>
+
+    <script type="module">
+        // ============================================================================
+        // 🚀 Firebase 연동 설정 영역 (입력 완료)
+        // ============================================================================
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, doc, setDoc, deleteDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCjMVYefo8_mOLkEkUTHKEhuCgEBliB0xw",
+            authDomain: "schoolecomap.firebaseapp.com",
+            projectId: "schoolecomap",
+            storageBucket: "schoolecomap.firebasestorage.app",
+            messagingSenderId: "774616475535",
+            appId: "1:774616475535:web:1240a598c2443d4a0f8dfa"
+        };
+
+        let app, db;
+        let isFirebaseEnabled = true; // 설정값이 있으므로 항상 활성화
+
+        try {
+            app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            console.log("🔥 Firebase Database 연동 활성화 완료!");
+        } catch (e) {
+            console.error("Firebase 초기화 에러:", e);
+        }
+
+        // ============================================================================
+
+        let ecoData = {
+            'region-1776323837744': { title: '학교 서쪽의 숲', subtitle: '생태 학습장', desc: '학교 서편의 울창한 숲입니다.', emoji: '🌳', tags: [], largeTrees: 15, smallTrees: 42, flowers: 120, animals: 5, plantPosts: [], animalPosts: [] },
+            'region-1776324154295': { title: '학교 남쪽의 숲', subtitle: '생태 학습장', desc: '상세 페이지에서 내용을 편집해주세요.', emoji: '🌳', tags: [], largeTrees: 0, smallTrees: 0, flowers: 0, animals: 0, plantPosts: [], animalPosts: [] },
+            'region-1776324211556': { title: '학교 교통섬의 숲', subtitle: '생태 학습장', desc: '상세 페이지에서 내용을 편집해주세요.', emoji: '🌳', tags: [], largeTrees: 0, smallTrees: 0, flowers: 0, animals: 0, plantPosts: [], animalPosts: [] },
+            'region-1776324246472': { title: '학교 시작의 숲', subtitle: '생태 학습장', desc: '상세 페이지에서 내용을 편집해주세요.', emoji: '🌳', tags: [], largeTrees: 0, smallTrees: 0, flowers: 0, animals: 0, plantPosts: [], animalPosts: [] },
+            'region-1776324296444': { title: '학교 동쪽의 숲', subtitle: '생태 학습장', desc: '상세 페이지에서 내용을 편집해주세요.', emoji: '🌳', tags: [], largeTrees: 0, smallTrees: 0, flowers: 0, animals: 0, plantPosts: [], animalPosts: [] },
+            'region-1776324354459': { title: '학교 중앙의 숲', subtitle: '생태 학습장', desc: '상세 페이지에서 내용을 편집해주세요.', emoji: '🌳', tags: [], largeTrees: 0, smallTrees: 0, flowers: 0, animals: 0, plantPosts: [], animalPosts: [] },
+            'region-1776324377079': { title: '학교 비밀의 숲', subtitle: '생태 학습장', desc: '상세 페이지에서 내용을 편집해주세요.', emoji: '🌳', tags: [], largeTrees: 0, smallTrees: 0, flowers: 0, animals: 0, plantPosts: [], animalPosts: [] }
+        };
+
+        // DOM 요소 선언
+        const mapViewport = document.getElementById('map-viewport');
+        const mapWrapper = document.getElementById('map-wrapper');
+        const svgOverlay = document.getElementById('svg-overlay');
+        const modal = document.getElementById('info-modal');
+        const editPanel = document.getElementById('edit-panel');
+        const toggleEditBtn = document.getElementById('toggle-edit-btn');
+        const closeEditBtn = document.getElementById('close-edit-btn');
+        const toolHelp = document.getElementById('tool-help');
+        const outPoly = document.getElementById('out-poly');
+        const outMarker = document.getElementById('out-marker');
+        const outData = document.getElementById('out-data');
+        const markerOptions = document.getElementById('marker-options');
+        const updatePropsBtn = document.getElementById('update-props-btn');
+        const outputModeLabel = document.getElementById('output-mode-label');
+        const selectedPolyIdSpan = document.getElementById('selected-poly-id');
+
+        const vegInputsContainer = document.getElementById('vegetation-inputs-container');
+        const modalVegInfo = document.getElementById('modal-vegetation-info');
+        const emojiRadios = document.querySelectorAll('input[name="m-emoji"]');
+
+        const passwordModal = document.getElementById('password-modal');
+        const pwModalTitle = document.getElementById('pw-modal-title');
+        const pwModalDesc = document.getElementById('pw-modal-desc');
+        const pwInput = document.getElementById('admin-pw-input');
+        const pwSubmitBtn = document.getElementById('pw-submit-btn');
+        const pwCancelBtn = document.getElementById('pw-cancel-btn');
+        const pwErrorMsg = document.getElementById('pw-error-msg');
+        let pwContext = 'map'; 
+
+        const alertModal = document.getElementById('alert-modal');
+        const alertMsg = document.getElementById('alert-msg');
+        const alertCloseBtn = document.getElementById('alert-close-btn');
+
+        const totalLargeTrees = document.getElementById('total-large-trees');
+        const totalSmallTrees = document.getElementById('total-small-trees');
+        const totalFlowers = document.getElementById('total-flowers');
+        const totalAnimals = document.getElementById('total-animals');
+
+        const mainView = document.getElementById('main-view');
+        const exploreView = document.getElementById('explore-view');
+        const backToMapBtn = document.getElementById('back-to-map-btn');
+        
+        const exploreEmoji = document.getElementById('explore-emoji');
+        const exploreTitle = document.getElementById('explore-title');
+        
+        const detailViewArea = document.getElementById('detail-view-area');
+        const exploreDesc = document.getElementById('explore-desc');
+        const exploreVegView = document.getElementById('explore-vegetation-view');
+        const exLargeTrees = document.getElementById('explore-large-trees');
+        const exSmallTrees = document.getElementById('explore-small-trees');
+        const exFlowers = document.getElementById('explore-flowers');
+        const exAnimals = document.getElementById('explore-animals');
+        
+        const detailEditArea = document.getElementById('detail-edit-area');
+        const editDescInput = document.getElementById('edit-explore-desc');
+        const editLargeInput = document.getElementById('edit-large-trees');
+        const editSmallInput = document.getElementById('edit-small-trees');
+        const editFlowerInput = document.getElementById('edit-flowers');
+        const editAnimalInput = document.getElementById('edit-animals');
+        
+        const detailEditBtn = document.getElementById('detail-edit-btn');
+        const detailSaveBtn = document.getElementById('detail-save-btn');
+
+        const plantBoardFormArea = document.getElementById('plant-board-form-area');
+        const animalBoardFormArea = document.getElementById('animal-board-form-area');
+        
+        const plantObsReporter = document.getElementById('plant-obs-reporter');
+        const plantObsDate = document.getElementById('plant-obs-date');
+        const plantObsName = document.getElementById('plant-obs-name');
+        const plantObsDesc = document.getElementById('plant-obs-desc');
+        const plantObsImg = document.getElementById('plant-obs-img');
+        const plantObsSubmitBtn = document.getElementById('plant-obs-submit-btn');
+        const plantBoardList = document.getElementById('plant-board-list');
+
+        const animalObsReporter = document.getElementById('animal-obs-reporter');
+        const animalObsDate = document.getElementById('animal-obs-date');
+        const animalObsName = document.getElementById('animal-obs-name');
+        const animalObsDesc = document.getElementById('animal-obs-desc');
+        const animalObsImg = document.getElementById('animal-obs-img');
+        const animalObsSubmitBtn = document.getElementById('animal-obs-submit-btn');
+        const animalBoardList = document.getElementById('animal-board-list');
+
+        // 관찰 기록 상세 모달 DOM
+        const obsDetailModal = document.getElementById('obs-detail-modal');
+        const obsCloseBtn = document.getElementById('obs-close-btn');
+        const obsDetailImg = document.getElementById('obs-detail-img');
+        const obsDetailName = document.getElementById('obs-detail-name');
+        const obsDetailReporter = document.getElementById('obs-detail-reporter');
+        const obsDetailDate = document.getElementById('obs-detail-date');
+        const obsDetailDesc = document.getElementById('obs-detail-desc');
+
+        // 데이터 초기화 (DB에서 가져오기)
+        async function initData() {
+            if (isFirebaseEnabled) {
+                try {
+                    const querySnapshot = await getDocs(collection(db, "ecologyMap"));
+                    if (!querySnapshot.empty) {
+                        querySnapshot.forEach((doc) => {
+                            ecoData[doc.id] = doc.data();
+                        });
+                    } else {
+                        // 최초 실행 시 기본 데이터 뼈대 업로드 (Promise.all로 속도 개선)
+                        const promises = [];
+                        for (const key in ecoData) {
+                            promises.push(setDoc(doc(db, "ecologyMap", key), ecoData[key]));
+                        }
+                        await Promise.all(promises);
+                    }
+                } catch (e) {
+                    console.error("Firebase 로드 에러(설정을 확인하세요):", e);
+                }
+            }
+            updateTotalStats();
+            updateOutputs();
+            
+            // 로딩 화면 부드럽게 숨기기 (데이터 로드 완료 후 사용 가능)
+            const loadingOverlay = document.getElementById('loading-overlay');
+            if (loadingOverlay) {
+                loadingOverlay.classList.add('opacity-0');
+                setTimeout(() => loadingOverlay.remove(), 500);
+            }
+        }
+
+        // 데이터 저장 및 삭제 함수 (DB 동기화)
+        async function syncToFirebase(polyId) {
+            if (!isFirebaseEnabled || !ecoData[polyId]) return;
+            try { await setDoc(doc(db, "ecologyMap", polyId), ecoData[polyId]); } 
+            catch(e) { console.error("Firebase 저장 실패:", e); }
+        }
+
+        async function removeFormFirebase(polyId) {
+            if (!isFirebaseEnabled) return;
+            try { await deleteDoc(doc(db, "ecologyMap", polyId)); } 
+            catch(e) { console.error("Firebase 삭제 실패:", e); }
+        }
+
+        emojiRadios.forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                if (e.target.value === '🌳') vegInputsContainer.classList.remove('hidden');
+                else vegInputsContainer.classList.add('hidden');
+            });
+        });
+
+        function showAlert(msg) {
+            alertMsg.textContent = msg;
+            alertModal.classList.remove('hidden');
+        }
+        alertCloseBtn.addEventListener('click', () => alertModal.classList.add('hidden'));
+
+        let isEditMode = false;
+        let isDetailEditMode = false; 
+        let currentTool = 'move'; 
+        let tempPolygon = null;
+        let selectedHandle = null;
+        let pointIndex = -1;
+        let currentlySelectedPolyId = null; 
+        let exploreCurrentPolyId = null; 
+        
+        let isPanning = false;
+        let startPanX = 0;
+        let startPanY = 0;
+        let translateX = 0;
+        let translateY = 0;
+
+        const handlesGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        handlesGroup.setAttribute('id', 'edit-handles');
+        svgOverlay.appendChild(handlesGroup);
+
+        const helpTexts = {
+            'select': '지도에서 구역을 클릭하면 해당 구역의 속성을 수정하고 추출할 수 있습니다.',
+            'move': '점(핸들)을 마우스로 드래그하여 모양을 세밀하게 수정하세요.',
+            'draw': '지도 위를 클릭하여 다각형의 꼭짓점을 찍으세요. 점이 이어지며 새로운 구역이 생성됩니다.',
+            'marker': '아래 입력창에서 속성을 설정한 뒤, 구역 내부를 클릭하여 새 마커를 추가하세요.',
+            'delete': '지우고 싶은 점(핸들)이나 구역, 마커를 클릭하여 제거하세요.',
+            'pan': '지도 빈 공간을 클릭하고 드래그하여 화면을 이동시키세요.'
+        };
+
+        function toggleEdit() {
+            if (!isEditMode) {
+                pwContext = 'map';
+                pwModalTitle.textContent = "🗺️ 지도 에디터 권한 확인";
+                pwModalDesc.textContent = "지도 구조를 수정하려면 비밀번호를 입력하세요.";
+                pwInput.value = '';
+                pwErrorMsg.classList.add('hidden');
+                passwordModal.classList.remove('hidden');
+                setTimeout(() => pwInput.focus(), 100);
+                return;
+            }
+
+            isEditMode = false;
+            document.body.classList.remove('edit-mode');
+            editPanel.classList.add('translate-x-full');
+            toggleEditBtn.classList.remove('hidden');
+            translateX = 0;
+            translateY = 0;
+            mapWrapper.style.transform = `translate(0px, 0px)`;
+            handlesGroup.innerHTML = '';
+            tempPolygon = null;
+            clearSelection();
+        }
+
+        detailEditBtn.addEventListener('click', () => {
+            pwContext = 'detail';
+            pwModalTitle.textContent = "📝 상세 내용 편집 권한 확인";
+            pwModalDesc.textContent = "내용을 수정하려면 관리자 비밀번호를 입력하세요.";
+            pwInput.value = '';
+            pwErrorMsg.classList.add('hidden');
+            passwordModal.classList.remove('hidden');
+            setTimeout(() => pwInput.focus(), 100);
+        });
+
+        pwSubmitBtn.addEventListener('click', () => {
+            if (pwContext === 'map' && pwInput.value === "5105") {
+                passwordModal.classList.add('hidden');
+                isEditMode = true;
+                document.body.classList.add('edit-mode');
+                editPanel.classList.remove('translate-x-full');
+                toggleEditBtn.classList.add('hidden');
+                translateX = 0;
+                translateY = 0;
+                mapWrapper.style.transform = `translate(${translateX}px, ${translateY}px)`;
+                renderHandles();
+                updateOutputs();
+            } else if (pwContext === 'detail' && pwInput.value === "0504") {
+                passwordModal.classList.add('hidden');
+                openDetailEditMode();
+            } else {
+                pwErrorMsg.classList.remove('hidden');
+            }
+        });
+
+        pwCancelBtn.addEventListener('click', () => passwordModal.classList.add('hidden'));
+        pwInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') pwSubmitBtn.click(); });
+        toggleEditBtn.addEventListener('click', toggleEdit);
+        closeEditBtn.addEventListener('click', toggleEdit);
+
+        // --- 상세 페이지 편집 로직 ---
+        function openDetailEditMode() {
+            let data = ecoData[exploreCurrentPolyId];
+            if(!data) return;
+
+            isDetailEditMode = true;
+
+            detailViewArea.classList.add('hidden');
+            detailEditArea.classList.remove('hidden');
+            detailEditBtn.classList.add('hidden');
+            detailSaveBtn.classList.remove('hidden');
+            
+            plantBoardFormArea.classList.remove('hidden');
+            animalBoardFormArea.classList.remove('hidden');
+
+            editDescInput.value = data.desc || "";
+            editLargeInput.value = data.largeTrees || 0;
+            editSmallInput.value = data.smallTrees || 0;
+            editFlowerInput.value = data.flowers || 0;
+            editAnimalInput.value = data.animals || 0;
+            
+            renderBoard('plant');
+            renderBoard('animal');
+        }
+
+        detailSaveBtn.addEventListener('click', () => {
+            let data = ecoData[exploreCurrentPolyId];
+            if(!data) return;
+
+            isDetailEditMode = false;
+
+            data.desc = editDescInput.value.trim();
+            data.largeTrees = parseInt(editLargeInput.value) || 0;
+            data.smallTrees = parseInt(editSmallInput.value) || 0;
+            data.flowers = parseInt(editFlowerInput.value) || 0;
+            data.animals = parseInt(editAnimalInput.value) || 0;
+
+            exploreDesc.textContent = data.desc;
+            exLargeTrees.textContent = data.largeTrees;
+            exSmallTrees.textContent = data.smallTrees;
+            exFlowers.textContent = data.flowers;
+            exAnimals.textContent = data.animals;
+
+            detailEditArea.classList.add('hidden');
+            detailViewArea.classList.remove('hidden');
+            detailSaveBtn.classList.add('hidden');
+            detailEditBtn.classList.remove('hidden');
+            
+            plantBoardFormArea.classList.add('hidden');
+            animalBoardFormArea.classList.add('hidden');
+            
+            renderBoard('plant');
+            renderBoard('animal');
+            
+            syncToFirebase(exploreCurrentPolyId); // 변경된 데이터 DB 저장
+            updateOutputs(); 
+            showAlert("상세 내용이 성공적으로 저장되었습니다!");
+        });
+
+        // --- 갤러리 게시판 로직 ---
+        function renderBoard(type) {
+            let listEl = type === 'plant' ? plantBoardList : animalBoardList;
+            let posts = ecoData[exploreCurrentPolyId][type + 'Posts'] || [];
+            
+            listEl.innerHTML = '';
+            if (posts.length === 0) {
+                listEl.innerHTML = '<p class="text-gray-400 text-sm col-span-full text-center py-8">등록된 사진이 없습니다.</p>';
+                return;
+            }
+
+            posts.forEach((post, index) => {
+                let imgHtml = post.img ? `<img src="${post.img}" class="w-full h-full object-cover transition-transform duration-300">` : `<div class="w-full h-full flex flex-col justify-center items-center bg-gray-100 text-gray-400 text-xs transition-transform duration-300"><span>📷</span><span>사진 없음</span></div>`;
+                
+                let deleteBtnHtml = isDetailEditMode ? `
+                    <button onclick="deletePost(event, '${type}', ${index})" class="absolute top-2 right-2 bg-red-500 text-white p-1.5 rounded-full hover:bg-red-600 shadow-sm z-20">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                ` : '';
+
+                listEl.innerHTML += `
+                    <div class="relative gallery-item cursor-pointer aspect-square bg-gray-100 rounded-lg overflow-hidden border border-gray-200 shadow-sm" onclick="openObsDetail('${type}', ${index})">
+                        ${imgHtml}
+                        ${deleteBtnHtml}
+                    </div>
+                `;
+            });
+        }
+
+        window.deletePost = function(e, type, index) {
+            e.stopPropagation(); 
+            if(confirm('이 기록을 삭제하시겠습니까?')) {
+                ecoData[exploreCurrentPolyId][type + 'Posts'].splice(index, 1);
+                syncToFirebase(exploreCurrentPolyId); // 데이터 DB 저장
+                renderBoard(type);
+                updateOutputs();
+            }
+        };
+
+        window.openObsDetail = function(type, index) {
+            let post = ecoData[exploreCurrentPolyId][type + 'Posts'][index];
+            if(!post) return;
+            
+            obsDetailImg.src = post.img || ''; 
+            obsDetailName.textContent = post.name || '이름 미상';
+            obsDetailReporter.textContent = post.reporter || '익명';
+            obsDetailDate.textContent = post.date || '-';
+            obsDetailDesc.textContent = post.desc || '설명이 없습니다.';
+            
+            obsDetailModal.classList.remove('hidden');
+        };
+        
+        obsCloseBtn.addEventListener('click', () => obsDetailModal.classList.add('hidden'));
+        obsDetailModal.addEventListener('click', (e) => { if (e.target === obsDetailModal) obsDetailModal.classList.add('hidden'); });
+
+        function handlePostSubmit(type) {
+            let reporterInput = type === 'plant' ? plantObsReporter : animalObsReporter;
+            let dateInput = type === 'plant' ? plantObsDate : animalObsDate;
+            let nameInput = type === 'plant' ? plantObsName : animalObsName;
+            let descInput = type === 'plant' ? plantObsDesc : animalObsDesc;
+            let imageInput = type === 'plant' ? plantObsImg : animalObsImg;
+
+            let name = nameInput.value.trim();
+            let file = imageInput.files[0];
+            
+            if (!name && !file) {
+                showAlert("사진을 첨부하거나 생물 이름을 입력해주세요!");
+                return;
+            }
+
+            if (!ecoData[exploreCurrentPolyId][type + 'Posts']) {
+                ecoData[exploreCurrentPolyId][type + 'Posts'] = [];
+            }
+
+            let newPost = { 
+                reporter: reporterInput.value.trim() || '익명',
+                date: dateInput.value || new Date().toISOString().split('T')[0],
+                name: name,
+                desc: descInput.value.trim(),
+                img: null 
+            };
+
+            function finalizePost() {
+                ecoData[exploreCurrentPolyId][type + 'Posts'].push(newPost);
+                
+                reporterInput.value = '';
+                dateInput.value = '';
+                nameInput.value = '';
+                descInput.value = '';
+                imageInput.value = '';
+                
+                syncToFirebase(exploreCurrentPolyId); // 데이터 DB 저장
+                
+                renderBoard(type);
+                updateOutputs();
+                showAlert("새로운 관찰 기록이 갤러리에 추가되었습니다!");
+            }
+
+            if (file) {
+                let reader = new FileReader();
+                reader.onload = function(e) {
+                    let img = new Image();
+                    img.onload = function() {
+                        // 파이어베이스 1MB 문서 용량 제한 에러 방지 (최적화 강화)
+                        const MAX_WIDTH = 500; 
+                        const MAX_HEIGHT = 500; 
+                        let width = img.width;
+                        let height = img.height;
+
+                        if (width > height) {
+                            if (width > MAX_WIDTH) {
+                                height *= MAX_WIDTH / width;
+                                width = MAX_WIDTH;
+                            }
+                        } else {
+                            if (height > MAX_HEIGHT) {
+                                width *= MAX_HEIGHT / height;
+                                height = MAX_HEIGHT;
+                            }
+                        }
+
+                        let canvas = document.createElement('canvas');
+                        canvas.width = width;
+                        canvas.height = height;
+                        let ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+
+                        // 화질을 0.6으로 맞추어 데이터 유실 방지 (웹에서는 충분히 선명함)
+                        newPost.img = canvas.toDataURL('image/jpeg', 0.6);
+                        finalizePost();
+                    };
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            } else {
+                finalizePost();
+            }
+        }
+
+        plantObsSubmitBtn.addEventListener('click', () => handlePostSubmit('plant'));
+        animalObsSubmitBtn.addEventListener('click', () => handlePostSubmit('animal'));
+
+
+        // --- 구역 선택 관련 함수 ---
+        function clearSelection() {
+            currentlySelectedPolyId = null;
+            document.querySelectorAll('.region-polygon').forEach(p => p.classList.remove('selected'));
+            document.querySelectorAll('.map-marker').forEach(m => m.classList.remove('selected'));
+            selectedPolyIdSpan.textContent = "선택 안됨";
+            updatePropsBtn.classList.add('hidden');
+            outputModeLabel.textContent = "전체 데이터";
+            outputModeLabel.classList.replace('bg-orange-600', 'bg-gray-200');
+            outputModeLabel.classList.replace('text-white', 'text-gray-600');
+            updateOutputs();
+        }
+
+        function selectRegion(polyId) {
+            clearSelection(); 
+            currentlySelectedPolyId = polyId;
+            
+            let poly = document.querySelector(`.region-polygon[data-id="${polyId}"]`);
+            let marker = document.querySelector(`.map-marker[data-linked-id="${polyId}"]`);
+            if(poly) poly.classList.add('selected');
+            if(marker) marker.classList.add('selected');
+
+            selectedPolyIdSpan.textContent = polyId;
+            let data = ecoData[polyId];
+            if(data) {
+                document.getElementById('m-name').value = data.title || "";
+                document.getElementById('m-large').value = data.largeTrees || 0;
+                document.getElementById('m-small').value = data.smallTrees || 0;
+                document.getElementById('m-flower').value = data.flowers || 0;
+                document.getElementById('m-animal').value = data.animals || 0;
+                let radio = document.querySelector(`input[name="m-emoji"][value="${data.emoji}"]`);
+                if(radio) {
+                    radio.checked = true;
+                    if (radio.value === '🌳') vegInputsContainer.classList.remove('hidden');
+                    else vegInputsContainer.classList.add('hidden');
+                }
+            }
+
+            updatePropsBtn.classList.remove('hidden');
+            outputModeLabel.textContent = "선택된 구역만";
+            outputModeLabel.classList.replace('bg-gray-200', 'bg-pink-500');
+            outputModeLabel.classList.replace('text-gray-600', 'text-white');
+            updateOutputs();
+        }
+
+        updatePropsBtn.addEventListener('click', () => {
+            if(!currentlySelectedPolyId) return;
+            
+            let emojiRadios = document.querySelector('input[name="m-emoji"]:checked');
+            let emoji = emojiRadios ? emojiRadios.value : "🌳";
+            let name = document.getElementById('m-name').value.trim() || "새 구역";
+            let largeTrees = parseInt(document.getElementById('m-large').value) || 0;
+            let smallTrees = parseInt(document.getElementById('m-small').value) || 0;
+            let flowers = parseInt(document.getElementById('m-flower').value) || 0;
+            let animals = parseInt(document.getElementById('m-animal').value) || 0;
+
+            if(ecoData[currentlySelectedPolyId]) {
+                ecoData[currentlySelectedPolyId].title = name;
+                ecoData[currentlySelectedPolyId].emoji = emoji;
+                ecoData[currentlySelectedPolyId].largeTrees = largeTrees;
+                ecoData[currentlySelectedPolyId].smallTrees = smallTrees;
+                ecoData[currentlySelectedPolyId].flowers = flowers;
+                ecoData[currentlySelectedPolyId].animals = animals;
+            }
+
+            let marker = document.querySelector(`.map-marker[data-linked-id="${currentlySelectedPolyId}"]`);
+            if(marker) {
+                marker.innerHTML = `<div class="marker-icon">${emoji}</div><span>${name}</span>`;
+            }
+
+            syncToFirebase(currentlySelectedPolyId); // 데이터 DB 저장
+            showAlert(`[${name}] 구역의 속성이 저장되었습니다.`);
+            updateOutputs();
+        });
+
+
+        document.querySelectorAll('.tool-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tool-btn').forEach(b => {
+                    b.classList.remove('bg-pink-500', 'text-white', 'active-tool', 'border-pink-600');
+                    b.classList.add('bg-gray-100', 'text-gray-600', 'border-gray-200');
+                });
+                btn.classList.remove('bg-gray-100', 'text-gray-600', 'border-gray-200');
+                btn.classList.add('bg-pink-500', 'text-white', 'active-tool', 'border-pink-600');
+                
+                currentTool = btn.dataset.tool;
+                toolHelp.innerText = helpTexts[currentTool];
+
+                if (currentTool === 'marker' || currentTool === 'select') {
+                    markerOptions.classList.remove('hidden');
+                    if(currentTool === 'marker') {
+                        updatePropsBtn.classList.add('hidden');
+                        let checkedRadio = document.querySelector('input[name="m-emoji"]:checked');
+                        if (checkedRadio && checkedRadio.value === '🌳') vegInputsContainer.classList.remove('hidden');
+                        else vegInputsContainer.classList.add('hidden');
+                    }
+                } else {
+                    markerOptions.classList.add('hidden');
+                }
+                
+                if (currentTool !== 'draw' && tempPolygon) tempPolygon = null; 
+                if (currentTool !== 'select') clearSelection(); 
+                
+                mapWrapper.style.cursor = currentTool === 'pan' ? 'grab' : 'default';
+                renderHandles(); 
+            });
+        });
+
+        mapViewport.addEventListener('mousedown', (e) => {
+            if (!isEditMode || currentTool !== 'pan') return;
+            isPanning = true;
+            mapWrapper.style.cursor = 'grabbing';
+            mapWrapper.style.transition = 'none'; 
+            startPanX = e.clientX - translateX;
+            startPanY = e.clientY - translateY;
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (!isPanning) return;
+            translateX = e.clientX - startPanX;
+            translateY = e.clientY - startPanY;
+            mapWrapper.style.transform = `translate(${translateX}px, ${translateY}px)`;
+        });
+
+        window.addEventListener('mouseup', () => {
+            if (isPanning) {
+                isPanning = false;
+                if (currentTool === 'pan') mapWrapper.style.cursor = 'grab';
+                mapWrapper.style.transition = 'transform 0.1s ease-out'; 
+            }
+        });
+
+        svgOverlay.addEventListener('mousedown', (e) => {
+            if (!isEditMode) {
+                let poly = e.target.closest('.region-polygon');
+                if (poly) {
+                    const polyId = poly.getAttribute('data-id');
+                    const data = ecoData[polyId];
+                    if (data) {
+                        document.getElementById('modal-title').textContent = data.title;
+                        document.getElementById('modal-subtitle').textContent = data.subtitle;
+                        document.getElementById('modal-desc').textContent = data.desc;
+                        document.getElementById('modal-image-emoji').textContent = data.emoji;
+                        
+                        if (data.emoji === '🌳') {
+                            modalVegInfo.classList.remove('hidden');
+                            document.getElementById('modal-large-trees').textContent = data.largeTrees || 0;
+                            document.getElementById('modal-small-trees').textContent = data.smallTrees || 0;
+                            document.getElementById('modal-flowers').textContent = data.flowers || 0;
+                            document.getElementById('modal-animals').textContent = data.animals || 0;
+                        } else {
+                            modalVegInfo.classList.add('hidden');
+                        }
+
+                        document.getElementById('explore-btn').onclick = () => {
+                            modal.classList.remove('active');
+                            exploreCurrentPolyId = polyId; 
+                            
+                            exploreEmoji.textContent = data.emoji;
+                            exploreTitle.textContent = data.title;
+                            exploreDesc.textContent = data.desc;
+                            
+                            if(data.emoji === '🌳') {
+                                exploreVegView.classList.remove('hidden');
+                                exLargeTrees.textContent = data.largeTrees || 0;
+                                exSmallTrees.textContent = data.smallTrees || 0;
+                                exFlowers.textContent = data.flowers || 0;
+                                exAnimals.textContent = data.animals || 0;
+                            } else {
+                                exploreVegView.classList.add('hidden');
+                            }
+                            
+                            detailEditArea.classList.add('hidden');
+                            detailViewArea.classList.remove('hidden');
+                            detailSaveBtn.classList.add('hidden');
+                            detailEditBtn.classList.remove('hidden');
+                            
+                            plantBoardFormArea.classList.add('hidden');
+                            animalBoardFormArea.classList.add('hidden');
+
+                            renderBoard('plant');
+                            renderBoard('animal');
+
+                            toggleEditBtn.classList.add('hidden');
+                            mainView.classList.add('hidden');
+                            exploreView.classList.remove('hidden');
+                            window.scrollTo(0, 0); 
+                        };
+                        modal.classList.add('active');
+                    }
+                }
+                return;
+            }
+
+            if (currentTool === 'pan' || e.target.tagName === 'circle') return; 
+
+            let poly = e.target.closest('.region-polygon');
+
+            if (currentTool === 'select') {
+                if(poly) selectRegion(poly.getAttribute('data-id'));
+                else clearSelection(); 
+                return;
+            }
+
+            if (currentTool === 'delete' && poly) {
+                let polyId = poly.getAttribute('data-id');
+                delete ecoData[polyId];
+                poly.remove();
+                if (poly === tempPolygon) tempPolygon = null;
+                
+                let linkedMarker = document.querySelector(`.map-marker[data-linked-id="${polyId}"]`);
+                if (linkedMarker) linkedMarker.remove();
+
+                removeFormFirebase(polyId); // 데이터 DB 삭제
+                renderHandles();
+                updateOutputs();
+                return;
+            }
+
+            if (currentTool === 'marker' && poly) {
+                let polyId = poly.getAttribute('data-id');
+                let emojiRadios = document.querySelector('input[name="m-emoji"]:checked');
+                let emoji = emojiRadios ? emojiRadios.value : "🌳";
+                let nameInput = document.getElementById('m-name');
+                let name = nameInput ? nameInput.value.trim() : "";
+                if (!name) name = "새 구역";
+
+                let largeTrees = parseInt(document.getElementById('m-large').value) || 0;
+                let smallTrees = parseInt(document.getElementById('m-small').value) || 0;
+                let flowers = parseInt(document.getElementById('m-flower').value) || 0;
+                let animals = parseInt(document.getElementById('m-animal').value) || 0;
+
+                let rect = mapWrapper.getBoundingClientRect();
+                let clickX = e.clientX - rect.left;
+                let clickY = e.clientY - rect.top;
+                
+                let leftPercent = (clickX / rect.width * 100).toFixed(1);
+                let topPercent = (clickY / rect.height * 100).toFixed(1);
+
+                let existingMarker = document.querySelector(`.map-marker[data-linked-id="${polyId}"]`);
+                if (existingMarker) existingMarker.remove();
+
+                let newMarker = document.createElement('div');
+                newMarker.className = 'map-marker';
+                newMarker.setAttribute('data-linked-id', polyId);
+                newMarker.style.top = `${topPercent}%`;
+                newMarker.style.left = `${leftPercent}%`;
+                newMarker.innerHTML = `<div class="marker-icon">${emoji}</div><span>${name}</span>`;
+                mapWrapper.appendChild(newMarker);
+
+                if (!ecoData[polyId]) {
+                    ecoData[polyId] = { title: name, subtitle: '새 구역', desc: '설명이 필요합니다.', emoji: emoji, tags: [], largeTrees: largeTrees, smallTrees: smallTrees, flowers: flowers, animals: animals, plantPosts: [], animalPosts: [] };
+                } else {
+                    ecoData[polyId].title = name;
+                    ecoData[polyId].emoji = emoji;
+                    ecoData[polyId].largeTrees = largeTrees;
+                    ecoData[polyId].smallTrees = smallTrees;
+                    ecoData[polyId].flowers = flowers;
+                    ecoData[polyId].animals = animals;
+                    if(!ecoData[polyId].plantPosts) ecoData[polyId].plantPosts = [];
+                    if(!ecoData[polyId].animalPosts) ecoData[polyId].animalPosts = [];
+                }
+                
+                syncToFirebase(polyId); // 데이터 DB 저장
+                updateOutputs();
+                return;
+            }
+
+            if (currentTool === 'draw') {
+                let CTM = svgOverlay.getScreenCTM();
+                let x = Math.round((e.clientX - CTM.e) / CTM.a);
+                let y = Math.round((e.clientY - CTM.f) / CTM.d);
+
+                if (!tempPolygon) {
+                    let id = 'region-' + Date.now();
+                    tempPolygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                    tempPolygon.setAttribute('class', 'region-polygon');
+                    tempPolygon.setAttribute('data-id', id);
+                    tempPolygon.setAttribute('points', `${x},${y} `);
+                    svgOverlay.insertBefore(tempPolygon, handlesGroup);
+                    ecoData[id] = { title: '새 구역', subtitle: '임시', desc: '설명', emoji: '❓', tags: [], plantPosts: [], animalPosts: [] };
+                } else {
+                    let pts = tempPolygon.getAttribute('points');
+                    tempPolygon.setAttribute('points', pts + `${x},${y} `);
+                }
+                renderHandles();
+                updateOutputs();
+            }
+        });
+
+        mapWrapper.addEventListener('mousedown', (e) => {
+            if (!isEditMode) return;
+            if (currentTool === 'pan') return;
+
+            let marker = e.target.closest('.map-marker');
+            if(marker) {
+                if (currentTool === 'select') {
+                    selectRegion(marker.getAttribute('data-linked-id'));
+                } else if (currentTool === 'delete') {
+                    marker.remove();
+                    updateOutputs();
+                }
+            }
+        });
+
+        function getPolygonPoints(polygon) {
+            let raw = polygon.getAttribute('points').trim();
+            return raw.split(/[\s,]+/).filter(v => v !== '');
+        }
+
+        function renderHandles() {
+            if (!isEditMode) return;
+            handlesGroup.innerHTML = '';
+            
+            let handleColor = currentTool === 'delete' ? '#ef4444' : '#ec4899';
+            let handlePointerEvents = currentTool === 'pan' ? 'pointer-events-none' : 'pointer-events-auto';
+
+            let polygonsToRender = currentlySelectedPolyId && currentTool === 'select'
+                ? document.querySelectorAll(`.region-polygon[data-id="${currentlySelectedPolyId}"]`)
+                : document.querySelectorAll('.region-polygon');
+
+            polygonsToRender.forEach((polygon) => {
+                const points = getPolygonPoints(polygon);
+                for (let i = 0; i < points.length; i += 2) {
+                    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                    circle.setAttribute('cx', points[i]);
+                    circle.setAttribute('cy', points[i + 1]);
+                    circle.setAttribute('r', '6');
+                    circle.setAttribute('fill', handleColor);
+                    circle.setAttribute('stroke', '#ffffff');
+                    circle.setAttribute('stroke-width', '2');
+                    circle.setAttribute('class', `edit-handle cursor-pointer ${handlePointerEvents}`);
+                    circle.dataset.polyId = polygon.getAttribute('data-id');
+                    circle.dataset.index = i;
+                    
+                    if(currentTool !== 'pan') {
+                        circle.addEventListener('mousedown', handleMouseDown);
+                    }
+                    handlesGroup.appendChild(circle);
+                }
+            });
+        }
+
+        function handleMouseDown(e) {
+            if(currentTool === 'pan') return;
+            e.stopPropagation(); 
+            
+            let polyId = this.dataset.polyId;
+            let currentPoly = document.querySelector(`.region-polygon[data-id="${polyId}"]`);
+            
+            if (currentTool === 'delete') {
+                let idx = parseInt(this.dataset.index);
+                let pts = getPolygonPoints(currentPoly);
+                pts.splice(idx, 2); 
+                
+                if (pts.length < 6) { 
+                    currentPoly.remove();
+                    delete ecoData[polyId];
+                    removeFormFirebase(polyId); // DB에서도 삭제
+                } else {
+                    currentPoly.setAttribute('points', pts.join(','));
+                }
+                renderHandles();
+                updateOutputs();
+                return;
+            }
+
+            if (currentTool === 'move' || currentTool === 'select') {
+                selectedHandle = e.target;
+                pointIndex = parseInt(selectedHandle.dataset.index);
+                window.addEventListener('mousemove', dragPoint);
+                window.addEventListener('mouseup', endDragPoint);
+            }
+        }
+
+        function dragPoint(e) {
+            if (!selectedHandle) return;
+            let CTM = svgOverlay.getScreenCTM();
+            let x = Math.round((e.clientX - CTM.e) / CTM.a);
+            let y = Math.round((e.clientY - CTM.f) / CTM.d);
+            
+            selectedHandle.setAttribute('cx', x);
+            selectedHandle.setAttribute('cy', y);
+            
+            let poly = document.querySelector(`.region-polygon[data-id="${selectedHandle.dataset.polyId}"]`);
+            let pts = getPolygonPoints(poly);
+            pts[pointIndex] = x;
+            pts[pointIndex + 1] = y;
+            
+            let newStr = '';
+            for(let i=0; i<pts.length; i+=2) newStr += `${pts[i]},${pts[i+1]} `;
+            poly.setAttribute('points', newStr.trim());
+            updateOutputs();
+        }
+
+        function finalizePost() {
+            // (이미지 업로드 등의 비동기 작업 완료 후 실행되는 헬퍼 함수)
+        }
+
+        function endDragPoint() {
+            selectedHandle = null;
+            window.removeEventListener('mousemove', dragPoint);
+            window.removeEventListener('mouseup', endDragPoint);
+        }
+
+        function updateOutputs() {
+            let polyCode = '';
+            let markerCode = '';
+            let exportData = {};
+
+            if (currentlySelectedPolyId && currentTool === 'select') {
+                let p = document.querySelector(`.region-polygon[data-id="${currentlySelectedPolyId}"]`);
+                if (p) polyCode = `<polygon class="region-polygon" data-id="${p.getAttribute('data-id')}" points="${p.getAttribute('points')}" />\n`;
+                
+                let m = document.querySelector(`.map-marker[data-linked-id="${currentlySelectedPolyId}"]`);
+                if (m) {
+                    let clone = m.cloneNode(true);
+                    clone.classList.remove('selected'); 
+                    markerCode = `<div class="map-marker" data-linked-id="${m.getAttribute('data-linked-id')}" style="top: ${clone.style.top}; left: ${clone.style.left};">\n  ${clone.innerHTML}\n</div>\n`;
+                }
+                if (ecoData[currentlySelectedPolyId]) exportData[currentlySelectedPolyId] = ecoData[currentlySelectedPolyId];
+            } else {
+                document.querySelectorAll('.region-polygon').forEach(p => {
+                    polyCode += `<polygon class="region-polygon" data-id="${p.getAttribute('data-id')}" points="${p.getAttribute('points')}" />\n`;
+                });
+                document.querySelectorAll('.map-marker').forEach(m => {
+                    let clone = m.cloneNode(true);
+                    clone.classList.remove('selected');
+                    markerCode += `<div class="map-marker" data-linked-id="${m.getAttribute('data-linked-id')}" style="top: ${clone.style.top}; left: ${clone.style.left};">\n  ${clone.innerHTML}\n</div>\n\n`;
+                });
+                exportData = ecoData;
+            }
+
+            outPoly.value = polyCode.trim();
+            outMarker.value = markerCode.trim();
+            
+            if (currentlySelectedPolyId && currentTool === 'select') {
+                let singleDataStr = `// ${exportData[currentlySelectedPolyId].title} 데이터\n'${currentlySelectedPolyId}': ${JSON.stringify(exportData[currentlySelectedPolyId], null, 4)}`;
+                outData.value = singleDataStr;
+            } else {
+                outData.value = "const ecoData = " + JSON.stringify(exportData, null, 4) + ";";
+            }
+
+            updateTotalStats(); 
+        }
+        
+        function updateTotalStats() {
+            let tLarge = 0, tSmall = 0, tFlowers = 0, tAnimals = 0;
+            for (let key in ecoData) {
+                let data = ecoData[key];
+                tLarge += (parseInt(data.largeTrees) || 0);
+                tSmall += (parseInt(data.smallTrees) || 0);
+                tFlowers += (parseInt(data.flowers) || 0);
+                tAnimals += (parseInt(data.animals) || 0);
+            }
+            if(totalLargeTrees) totalLargeTrees.textContent = tLarge;
+            if(totalSmallTrees) totalSmallTrees.textContent = tSmall;
+            if(totalFlowers) totalFlowers.textContent = tFlowers;
+            if(totalAnimals) totalAnimals.textContent = tAnimals;
+        }
+
+        document.getElementById('close-modal-btn').addEventListener('click', () => modal.classList.remove('active'));
+        modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('active'); });
+
+        backToMapBtn.addEventListener('click', () => {
+            isDetailEditMode = false;
+            exploreView.classList.add('hidden');
+            mainView.classList.remove('hidden');
+            toggleEditBtn.classList.remove('hidden'); 
+            
+            updateOutputs();
+            window.scrollTo(0, 0);
+        });
+
+        // 초기 실행
+        initData();
+
+    </script>
+</body>
+</html>
