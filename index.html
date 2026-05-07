@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>생태지도 탐험</title>
+    <!-- 폰트 및 스타일(Tailwind CSS) 불러오기 -->
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700;900&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -320,7 +321,9 @@
                 </div>
             </div>
         </main>
-    </div> <div id="explore-view" class="hidden min-h-screen bg-pink-50 p-4 md:p-8 z-40 relative">
+    </div> 
+
+    <div id="explore-view" class="hidden min-h-screen bg-pink-50 p-4 md:p-8 z-40 relative">
         <div class="max-w-5xl mx-auto flex justify-between items-center mb-6">
             <button id="back-to-map-btn" class="bg-white hover:bg-pink-50 text-pink-600 border border-pink-200 px-4 py-2 rounded-lg font-bold flex items-center gap-2 transition-colors shadow-sm">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
@@ -496,12 +499,13 @@
         </div>
     </div>
 
-    <div id="obs-detail-modal" class="fixed inset-0 z-[150] flex items-center justify-center bg-black/60 backdrop-blur-sm hidden p-4">
+    <!-- 🚨 모달 HTML 복구 : 'hidden' 태그 삭제 (CSS opacity 로만 제어) -->
+    <div id="obs-detail-modal" class="fixed inset-0 z-[150] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
         <div class="bg-white border border-pink-200 rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
             <div class="relative bg-gray-100 flex-shrink-0 h-64 md:h-80 flex items-center justify-center border-b border-pink-100">
                 <img id="obs-detail-img" class="w-full h-full object-contain">
-                <button id="obs-close-btn" class="absolute top-3 right-3 bg-white/80 text-gray-800 p-2 rounded-full hover:bg-white transition-colors backdrop-blur-sm shadow">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                <button id="obs-close-btn" class="absolute top-3 right-3 bg-white/80 text-gray-800 p-2 rounded-full hover:bg-white transition-colors backdrop-blur-sm shadow z-[160]">
+                    <svg class="w-5 h-5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
             </div>
             <div class="p-6 overflow-y-auto">
@@ -539,7 +543,7 @@
 
     <script type="module">
         // ============================================================================
-        // 🚀 Firebase 연동 설정 영역 (입력 완료)
+        // 🚀 Firebase 연동 설정 영역
         // ============================================================================
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getFirestore, doc, setDoc, deleteDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
@@ -554,7 +558,7 @@
         };
 
         let app, db;
-        let isFirebaseEnabled = true; // 설정값이 있으므로 항상 활성화
+        let isFirebaseEnabled = true;
 
         try {
             app = initializeApp(firebaseConfig);
@@ -576,7 +580,6 @@
             'region-1776324377079': { title: '학교 비밀의 숲', subtitle: '생태 학습장', desc: '상세 페이지에서 내용을 편집해주세요.', emoji: '🌳', tags: [], largeTrees: 0, smallTrees: 0, flowers: 0, animals: 0, plantPosts: [], animalPosts: [] }
         };
 
-        // DOM 요소 선언
         const mapViewport = document.getElementById('map-viewport');
         const mapWrapper = document.getElementById('map-wrapper');
         const svgOverlay = document.getElementById('svg-overlay');
@@ -659,7 +662,6 @@
         const animalObsSubmitBtn = document.getElementById('animal-obs-submit-btn');
         const animalBoardList = document.getElementById('animal-board-list');
 
-        // 관찰 기록 상세 모달 DOM
         const obsDetailModal = document.getElementById('obs-detail-modal');
         const obsCloseBtn = document.getElementById('obs-close-btn');
         const obsDetailImg = document.getElementById('obs-detail-img');
@@ -678,7 +680,7 @@
                             ecoData[doc.id] = doc.data();
                         });
                     } else {
-                        // 최초 실행 시 기본 데이터 뼈대 업로드 (Promise.all로 속도 개선)
+                        // 최초 실행 시 기본 데이터 뼈대 업로드 
                         const promises = [];
                         for (const key in ecoData) {
                             promises.push(setDoc(doc(db, "ecologyMap", key), ecoData[key]));
@@ -692,7 +694,7 @@
             updateTotalStats();
             updateOutputs();
             
-            // 로딩 화면 부드럽게 숨기기 (데이터 로드 완료 후 사용 가능)
+            // 로딩 화면 부드럽게 숨기기
             const loadingOverlay = document.getElementById('loading-overlay');
             if (loadingOverlay) {
                 loadingOverlay.classList.add('opacity-0');
@@ -700,7 +702,6 @@
             }
         }
 
-        // 데이터 저장 및 삭제 함수 (DB 동기화)
         async function syncToFirebase(polyId) {
             if (!isFirebaseEnabled || !ecoData[polyId]) return;
             try { await setDoc(doc(db, "ecologyMap", polyId), ecoData[polyId]); } 
@@ -872,7 +873,7 @@
             showAlert("상세 내용이 성공적으로 저장되었습니다!");
         });
 
-        // --- 갤러리 게시판 로직 ---
+        // 🚨 갤러리 렌더링 (이벤트 위임 방식 적용)
         function renderBoard(type) {
             let listEl = type === 'plant' ? plantBoardList : animalBoardList;
             let posts = ecoData[exploreCurrentPolyId][type + 'Posts'] || [];
@@ -887,13 +888,13 @@
                 let imgHtml = post.img ? `<img src="${post.img}" class="w-full h-full object-cover transition-transform duration-300">` : `<div class="w-full h-full flex flex-col justify-center items-center bg-gray-100 text-gray-400 text-xs transition-transform duration-300"><span>📷</span><span>사진 없음</span></div>`;
                 
                 let deleteBtnHtml = isDetailEditMode ? `
-                    <button onclick="deletePost(event, '${type}', ${index})" class="absolute top-2 right-2 bg-red-500 text-white p-1.5 rounded-full hover:bg-red-600 shadow-sm z-20">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    <button class="delete-post-btn absolute top-2 right-2 bg-red-500 text-white p-1.5 rounded-full hover:bg-red-600 shadow-sm z-20" data-type="${type}" data-index="${index}">
+                        <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                     </button>
                 ` : '';
 
                 listEl.innerHTML += `
-                    <div class="relative gallery-item cursor-pointer aspect-square bg-gray-100 rounded-lg overflow-hidden border border-gray-200 shadow-sm" onclick="openObsDetail('${type}', ${index})">
+                    <div class="relative gallery-item cursor-pointer aspect-square bg-gray-100 rounded-lg overflow-hidden border border-gray-200 shadow-sm" data-type="${type}" data-index="${index}">
                         ${imgHtml}
                         ${deleteBtnHtml}
                     </div>
@@ -901,31 +902,48 @@
             });
         }
 
-        window.deletePost = function(e, type, index) {
-            e.stopPropagation(); 
-            if(confirm('이 기록을 삭제하시겠습니까?')) {
-                ecoData[exploreCurrentPolyId][type + 'Posts'].splice(index, 1);
-                syncToFirebase(exploreCurrentPolyId); // 데이터 DB 저장
-                renderBoard(type);
-                updateOutputs();
+        // 🚨 갤러리 클릭 이벤트 위임 핸들러 (모달창 열기 버그 수정 완료)
+        function handleGalleryClick(e) {
+            let deleteBtn = e.target.closest('.delete-post-btn');
+            if (deleteBtn) {
+                e.stopPropagation();
+                let type = deleteBtn.getAttribute('data-type');
+                let index = parseInt(deleteBtn.getAttribute('data-index'));
+                
+                if(confirm('이 기록을 삭제하시겠습니까?')) {
+                    ecoData[exploreCurrentPolyId][type + 'Posts'].splice(index, 1);
+                    syncToFirebase(exploreCurrentPolyId); 
+                    renderBoard(type);
+                    updateOutputs();
+                }
+                return;
             }
-        };
 
-        window.openObsDetail = function(type, index) {
-            let post = ecoData[exploreCurrentPolyId][type + 'Posts'][index];
-            if(!post) return;
-            
-            obsDetailImg.src = post.img || ''; 
-            obsDetailName.textContent = post.name || '이름 미상';
-            obsDetailReporter.textContent = post.reporter || '익명';
-            obsDetailDate.textContent = post.date || '-';
-            obsDetailDesc.textContent = post.desc || '설명이 없습니다.';
-            
-            obsDetailModal.classList.remove('hidden');
-        };
+            let item = e.target.closest('.gallery-item');
+            if (item) {
+                let type = item.getAttribute('data-type');
+                let index = parseInt(item.getAttribute('data-index'));
+                
+                let post = ecoData[exploreCurrentPolyId][type + 'Posts'][index];
+                if(!post) return;
+                
+                obsDetailImg.src = post.img || ''; 
+                obsDetailName.textContent = post.name || '이름 미상';
+                obsDetailReporter.textContent = post.reporter || '익명';
+                obsDetailDate.textContent = post.date || '-';
+                obsDetailDesc.textContent = post.desc || '설명이 없습니다.';
+                
+                // 모달창 활성화 (투명도 애니메이션 작동)
+                obsDetailModal.classList.add('active');
+            }
+        }
+
+        plantBoardList.addEventListener('click', handleGalleryClick);
+        animalBoardList.addEventListener('click', handleGalleryClick);
         
-        obsCloseBtn.addEventListener('click', () => obsDetailModal.classList.add('hidden'));
-        obsDetailModal.addEventListener('click', (e) => { if (e.target === obsDetailModal) obsDetailModal.classList.add('hidden'); });
+        // 닫기 버튼 및 배경 클릭 시 모달창 닫기
+        obsCloseBtn.addEventListener('click', () => obsDetailModal.classList.remove('active'));
+        obsDetailModal.addEventListener('click', (e) => { if (e.target === obsDetailModal) obsDetailModal.classList.remove('active'); });
 
         function handlePostSubmit(type) {
             let reporterInput = type === 'plant' ? plantObsReporter : animalObsReporter;
@@ -954,20 +972,24 @@
                 img: null 
             };
 
-            function finalizePost() {
+            async function finalizePost() {
                 ecoData[exploreCurrentPolyId][type + 'Posts'].push(newPost);
                 
-                reporterInput.value = '';
-                dateInput.value = '';
-                nameInput.value = '';
-                descInput.value = '';
-                imageInput.value = '';
+                let isSaved = await syncToFirebase(exploreCurrentPolyId); 
                 
-                syncToFirebase(exploreCurrentPolyId); // 데이터 DB 저장
-                
-                renderBoard(type);
-                updateOutputs();
-                showAlert("새로운 관찰 기록이 갤러리에 추가되었습니다!");
+                if(isSaved !== false) {
+                    reporterInput.value = '';
+                    dateInput.value = '';
+                    nameInput.value = '';
+                    descInput.value = '';
+                    imageInput.value = '';
+                    
+                    renderBoard(type);
+                    updateOutputs();
+                    showAlert("새로운 관찰 기록이 갤러리에 추가되었습니다!");
+                } else {
+                    ecoData[exploreCurrentPolyId][type + 'Posts'].pop();
+                }
             }
 
             if (file) {
@@ -975,9 +997,8 @@
                 reader.onload = function(e) {
                     let img = new Image();
                     img.onload = function() {
-                        // 파이어베이스 1MB 문서 용량 제한 에러 방지 (최적화 강화)
-                        const MAX_WIDTH = 500; 
-                        const MAX_HEIGHT = 500; 
+                        const MAX_WIDTH = 400; 
+                        const MAX_HEIGHT = 400; 
                         let width = img.width;
                         let height = img.height;
 
@@ -999,8 +1020,7 @@
                         let ctx = canvas.getContext('2d');
                         ctx.drawImage(img, 0, 0, width, height);
 
-                        // 화질을 0.6으로 맞추어 데이터 유실 방지 (웹에서는 충분히 선명함)
-                        newPost.img = canvas.toDataURL('image/jpeg', 0.6);
+                        newPost.img = canvas.toDataURL('image/jpeg', 0.5);
                         finalizePost();
                     };
                     img.src = e.target.result;
@@ -1408,10 +1428,6 @@
             for(let i=0; i<pts.length; i+=2) newStr += `${pts[i]},${pts[i+1]} `;
             poly.setAttribute('points', newStr.trim());
             updateOutputs();
-        }
-
-        function finalizePost() {
-            // (이미지 업로드 등의 비동기 작업 완료 후 실행되는 헬퍼 함수)
         }
 
         function endDragPoint() {
