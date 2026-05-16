@@ -166,8 +166,8 @@
 
     <div id="loading-overlay" class="fixed inset-0 z-[300] flex flex-col items-center justify-center bg-pink-50/95 backdrop-blur-sm transition-opacity duration-500">
         <div class="text-6xl animate-bounce mb-4">🌱</div>
-        <h2 id="loading-msg" class="text-2xl font-black text-pink-500 mb-2">생태지도 불러오는 중...</h2>
-        <p class="text-gray-500 font-bold text-sm">데이터를 안전하게 동기화하고 있어요!</p>
+        <h2 id="loading-msg" class="text-2xl font-black text-pink-500 mb-2">실시간 동기화 중...</h2>
+        <p class="text-gray-500 font-bold text-sm">친구들의 관찰 기록을 가져오고 있어요!</p>
     </div>
 
     <button id="toggle-edit-btn" class="fixed top-4 right-4 z-[90] bg-white hover:bg-pink-50 text-pink-600 px-5 py-2.5 rounded-full shadow-lg font-bold transition-colors border-2 border-pink-200 flex items-center gap-2">
@@ -233,21 +233,6 @@
             <div class="bg-pink-50 p-3 rounded-lg border border-pink-200 text-xs text-gray-600 mb-6 leading-relaxed" id="tool-help">
                 점을 드래그하여 모양을 수정하세요.
             </div>
-
-            <h3 class="text-sm font-bold text-pink-500 mb-3 flex justify-between items-center">
-                <span>2. 추출 코드</span>
-                <span id="output-mode-label" class="text-[10px] bg-gray-200 px-2 py-0.5 rounded text-gray-600 border border-gray-300">전체 데이터</span>
-            </h3>
-            
-            <label class="block text-[10px] text-gray-500 mb-1">SVG 폴리곤 좌표</label>
-            <textarea id="out-poly" class="w-full h-20 bg-gray-50 text-gray-700 text-[10px] p-2 rounded border border-gray-300 font-mono mb-3" readonly></textarea>
-            
-            <label class="block text-[10px] text-gray-500 mb-1">마커(Marker) HTML</label>
-            <textarea id="out-marker" class="w-full h-20 bg-gray-50 text-gray-700 text-[10px] p-2 rounded border border-gray-300 font-mono mb-3" readonly></textarea>
-            
-            <label class="block text-[10px] text-gray-500 mb-1">JS 생태 정보 (데이터 백업용)</label>
-            <textarea id="out-data" class="w-full h-20 bg-gray-50 text-gray-700 text-[10px] p-2 rounded border border-gray-300 font-mono" readonly></textarea>
-            <p class="text-[10px] text-pink-500 mt-1">※ 파이어베이스 연동 시 데이터는 자동 저장되므로 SVG와 마커 HTML만 복사하시면 됩니다.</p>
         </div>
     </div>
 
@@ -323,6 +308,7 @@
         </main>
     </div> 
 
+    <!-- 상세 탐구 페이지 -->
     <div id="explore-view" class="hidden min-h-screen bg-pink-50 p-4 md:p-8 z-40 relative">
         <div class="max-w-5xl mx-auto flex justify-between items-center mb-6">
             <button id="back-to-map-btn" class="bg-white hover:bg-pink-50 text-pink-600 border border-pink-200 px-4 py-2 rounded-lg font-bold flex items-center gap-2 transition-colors shadow-sm">
@@ -499,8 +485,7 @@
         </div>
     </div>
 
-    <!-- 🚨 모달 HTML 복구 : 'hidden' 태그 삭제하여 정상 작동되도록 수정 -->
-    <div id="obs-detail-modal" class="fixed inset-0 z-[150] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+    <div id="obs-detail-modal" class="fixed inset-0 z-[150] flex items-center justify-center bg-black/60 backdrop-blur-sm hidden p-4">
         <div class="bg-white border border-pink-200 rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
             <div class="relative bg-gray-100 flex-shrink-0 h-64 md:h-80 flex items-center justify-center border-b border-pink-100">
                 <img id="obs-detail-img" class="w-full h-full object-contain">
@@ -542,11 +527,9 @@
     </div>
 
     <script type="module">
-        // ============================================================================
-        // 🚀 Firebase 연동 설정 영역
-        // ============================================================================
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, doc, setDoc, deleteDoc, collection, getDocs, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        // 🚨 실시간 동기화를 위해 onSnapshot, arrayUnion, arrayRemove 추가
+        import { getFirestore, doc, setDoc, deleteDoc, collection, onSnapshot, updateDoc, arrayUnion, arrayRemove } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyCjMVYefo8_mOLkEkUTHKEhuCgEBliB0xw",
@@ -558,17 +541,15 @@
         };
 
         let app, db;
-        let isFirebaseEnabled = true;
+        let isFirebaseEnabled = true; 
 
         try {
             app = initializeApp(firebaseConfig);
             db = getFirestore(app);
-            console.log("🔥 Firebase Database 연동 활성화 완료!");
+            console.log("🔥 실시간 Firebase Database 연동 활성화 완료!");
         } catch (e) {
             console.error("Firebase 초기화 에러:", e);
         }
-
-        // ============================================================================
 
         let ecoData = {
             'region-1776323837744': { title: '학교 서쪽의 숲', subtitle: '생태 학습장', desc: '학교 서편의 울창한 숲입니다.', emoji: '🌳', tags: [], largeTrees: 15, smallTrees: 42, flowers: 120, animals: 5, plantPosts: [], animalPosts: [] },
@@ -670,7 +651,6 @@
         const obsDetailDate = document.getElementById('obs-detail-date');
         const obsDetailDesc = document.getElementById('obs-detail-desc');
 
-        // 🚨 로딩 표시 헬퍼 함수 추가
         function showLoading(msg) {
             const overlay = document.getElementById('loading-overlay');
             const msgEl = document.getElementById('loading-msg');
@@ -695,67 +675,48 @@
             }
         }
 
-        // 데이터 초기화
-        async function initData() {
-            if (isFirebaseEnabled) {
-                try {
-                    const querySnapshot = await getDocs(collection(db, "ecologyMap"));
-                    if (!querySnapshot.empty) {
-                        querySnapshot.forEach((doc) => {
-                            let docData = doc.data();
-                            if(!docData.plantPosts) docData.plantPosts = [];
-                            if(!docData.animalPosts) docData.animalPosts = [];
-                            ecoData[doc.id] = docData;
-                        });
-                    } else {
-                        // DB가 완전히 비어있을 때만 기본 데이터 업로드 방어 로직
-                        const promises = [];
-                        for (const key in ecoData) {
-                            promises.push(setDoc(doc(db, "ecologyMap", key), ecoData[key]));
-                        }
-                        await Promise.all(promises);
+        // 🚨 실시간 동기화 설정 (데이터를 즉시 반영하고 덮어쓰기를 원천 차단합니다)
+        function setupRealtimeSync() {
+            if (!isFirebaseEnabled) return;
+            
+            onSnapshot(collection(db, "ecologyMap"), (snapshot) => {
+                if (snapshot.empty) {
+                    // 최초 실행 시 기본 데이터 뼈대 업로드
+                    for (const key in ecoData) {
+                        setDoc(doc(db, "ecologyMap", key), ecoData[key], { merge: true });
                     }
-                } catch (e) {
-                    console.error("Firebase 로드 에러(설정을 확인하세요):", e);
-                }
-            }
-            updateTotalStats();
-            updateOutputs();
-            hideLoading();
-        }
-
-        // 🚨 단일 지역 최신 데이터 동기화 함수 (데이터 덮어쓰기 증발 방지)
-        async function fetchRegionData(polyId) {
-            if (!isFirebaseEnabled) return ecoData[polyId];
-            try {
-                const docSnap = await getDoc(doc(db, "ecologyMap", polyId));
-                if (docSnap.exists()) {
-                    let docData = docSnap.data();
-                    if(!docData.plantPosts) docData.plantPosts = [];
-                    if(!docData.animalPosts) docData.animalPosts = [];
-                    ecoData[polyId] = docData;
-                }
-            } catch(e) {
-                console.error("최신 데이터 불러오기 실패:", e);
-            }
-            return ecoData[polyId];
-        }
-
-        async function syncToFirebase(polyId) {
-            if (!isFirebaseEnabled || !ecoData[polyId]) return true;
-            try { 
-                await setDoc(doc(db, "ecologyMap", polyId), ecoData[polyId]); 
-                return true;
-            } catch(e) { 
-                console.error("Firebase 저장 실패:", e); 
-                if (e.code === 'resource-exhausted' || (e.message && e.message.includes('exceeds the maximum'))) {
-                    showAlert("🚨 사진 용량이 너무 커서 저장할 수 없습니다!\n최근 추가한 사진을 삭제하거나 더 작은 용량의 사진을 사용해주세요.");
                 } else {
-                    showAlert("🚨 데이터 저장에 실패했습니다. 인터넷 연결을 확인해주세요.");
+                    snapshot.docs.forEach((docSnap) => {
+                        let docData = docSnap.data();
+                        if(!docData.plantPosts) docData.plantPosts = [];
+                        if(!docData.animalPosts) docData.animalPosts = [];
+                        ecoData[docSnap.id] = docData;
+                    });
+
+                    // 사용자가 상세 페이지를 보고 있다면, 화면을 실시간으로 새로고침합니다.
+                    if (exploreCurrentPolyId && !isDetailEditMode) {
+                        let currentData = ecoData[exploreCurrentPolyId];
+                        if (currentData) {
+                            exploreDesc.textContent = currentData.desc || "";
+                            exLargeTrees.textContent = currentData.largeTrees || 0;
+                            exSmallTrees.textContent = currentData.smallTrees || 0;
+                            exFlowers.textContent = currentData.flowers || 0;
+                            exAnimals.textContent = currentData.animals || 0;
+                            renderBoard('plant');
+                            renderBoard('animal');
+                        }
+                    }
                 }
-                return false;
-            }
+                updateTotalStats();
+                hideLoading();
+            }, (error) => {
+                console.error("Firebase 실시간 연동 에러:", error);
+                hideLoading();
+            });
         }
+
+        // 초기 실행 (getDocs 대신 onSnapshot 사용)
+        setupRealtimeSync();
 
         async function removeFormFirebase(polyId) {
             if (!isFirebaseEnabled) return;
@@ -797,7 +758,7 @@
 
         const helpTexts = {
             'select': '지도에서 구역을 클릭하면 해당 구역의 속성을 수정하고 추출할 수 있습니다.',
-            'move': '점(핸들)을 마우스로 드래그하여 모양을 세밀하게 수정하세요.',
+            'move': '점(핸들)을 마우스로 드래그하여 모양 세밀하게 수정하세요.',
             'draw': '지도 위를 클릭하여 다각형의 꼭짓점을 찍으세요. 점이 이어지며 새로운 구역이 생성됩니다.',
             'marker': '아래 입력창에서 속성을 설정한 뒤, 구역 내부를 클릭하여 새 마커를 추가하세요.',
             'delete': '지우고 싶은 점(핸들)이나 구역, 마커를 클릭하여 제거하세요.',
@@ -849,7 +810,6 @@
                 translateY = 0;
                 mapWrapper.style.transform = `translate(${translateX}px, ${translateY}px)`;
                 renderHandles();
-                updateOutputs();
             } else if (pwContext === 'detail' && pwInput.value === "0504") {
                 passwordModal.classList.add('hidden');
                 openDetailEditMode();
@@ -863,7 +823,6 @@
         toggleEditBtn.addEventListener('click', toggleEdit);
         closeEditBtn.addEventListener('click', toggleEdit);
 
-        // --- 상세 페이지 편집 로직 ---
         function openDetailEditMode() {
             let data = ecoData[exploreCurrentPolyId];
             if(!data) return;
@@ -888,29 +847,27 @@
             renderBoard('animal');
         }
 
-        // 🚨 선생님 편집 저장 시 데이터 증발 방어 로직 추가
+        // 🚨 선생님 편집 저장 (사진 배열은 건드리지 않고 텍스트/숫자만 병합(merge)하여 저장)
         detailSaveBtn.addEventListener('click', async () => {
             showLoading("수정된 내용을 안전하게 저장 중입니다...");
-
-            // 저장하기 전에 다른 학생이 방금 올린 사진이 덮어씌워지지 않게 최신 데이터를 다시 불러옴
-            let latestData = await fetchRegionData(exploreCurrentPolyId);
-
             isDetailEditMode = false;
 
-            // 텍스트/숫자 정보만 안전하게 병합
-            latestData.desc = editDescInput.value.trim();
-            latestData.largeTrees = parseInt(editLargeInput.value) || 0;
-            latestData.smallTrees = parseInt(editSmallInput.value) || 0;
-            latestData.flowers = parseInt(editFlowerInput.value) || 0;
-            latestData.animals = parseInt(editAnimalInput.value) || 0;
+            let updatePayload = {
+                desc: editDescInput.value.trim(),
+                largeTrees: parseInt(editLargeInput.value) || 0,
+                smallTrees: parseInt(editSmallInput.value) || 0,
+                flowers: parseInt(editFlowerInput.value) || 0,
+                animals: parseInt(editAnimalInput.value) || 0
+            };
 
-            ecoData[exploreCurrentPolyId] = latestData;
-
-            exploreDesc.textContent = latestData.desc;
-            exLargeTrees.textContent = latestData.largeTrees;
-            exSmallTrees.textContent = latestData.smallTrees;
-            exFlowers.textContent = latestData.flowers;
-            exAnimals.textContent = latestData.animals;
+            try {
+                // 배열은 덮어쓰지 않고 특정 필드만 업데이트 (데이터 증발 완벽 방어)
+                await setDoc(doc(db, "ecologyMap", exploreCurrentPolyId), updatePayload, { merge: true });
+                showAlert("상세 내용이 성공적으로 저장되었습니다!");
+            } catch (e) {
+                console.error(e);
+                showAlert("🚨 저장에 실패했습니다.");
+            }
 
             detailEditArea.classList.add('hidden');
             detailViewArea.classList.remove('hidden');
@@ -920,13 +877,7 @@
             plantBoardFormArea.classList.add('hidden');
             animalBoardFormArea.classList.add('hidden');
             
-            renderBoard('plant');
-            renderBoard('animal');
-            
-            await syncToFirebase(exploreCurrentPolyId); 
-            hideLoading();
-            updateOutputs(); 
-            showAlert("상세 내용이 성공적으로 저장되었습니다!");
+            // 화면 갱신은 onSnapshot이 알아서 처리해줍니다.
         });
 
         function renderBoard(type) {
@@ -957,19 +908,27 @@
             });
         }
 
-        // 🚨 갤러리 클릭 이벤트 위임 핸들러
-        function handleGalleryClick(e) {
+        // 🚨 갤러리 클릭 이벤트 (모달창 열기 및 게시물 삭제 처리)
+        async function handleGalleryClick(e) {
             let deleteBtn = e.target.closest('.delete-post-btn');
             if (deleteBtn) {
                 e.stopPropagation();
                 let type = deleteBtn.getAttribute('data-type');
                 let index = parseInt(deleteBtn.getAttribute('data-index'));
                 
-                if(confirm('이 기록을 삭제하시겠습니까?')) {
-                    ecoData[exploreCurrentPolyId][type + 'Posts'].splice(index, 1);
-                    syncToFirebase(exploreCurrentPolyId); 
-                    renderBoard(type);
-                    updateOutputs();
+                if(confirm('이 기록을 완전히 삭제하시겠습니까?')) {
+                    showLoading("삭제 중입니다...");
+                    // 🚨 삭제할 게시물을 콕 집어서 DB에서 안전하게 제거 (arrayRemove)
+                    let postToRemove = ecoData[exploreCurrentPolyId][type + 'Posts'][index];
+                    try {
+                        await updateDoc(doc(db, "ecologyMap", exploreCurrentPolyId), {
+                            [type + 'Posts']: arrayRemove(postToRemove)
+                        });
+                    } catch (error) {
+                        console.error("삭제 실패", error);
+                        showAlert("🚨 삭제 중 오류가 발생했습니다.");
+                    }
+                    hideLoading();
                 }
                 return;
             }
@@ -988,17 +947,17 @@
                 obsDetailDate.textContent = post.date || '-';
                 obsDetailDesc.textContent = post.desc || '설명이 없습니다.';
                 
-                obsDetailModal.classList.add('active');
+                obsDetailModal.classList.remove('hidden');
             }
         }
 
         plantBoardList.addEventListener('click', handleGalleryClick);
         animalBoardList.addEventListener('click', handleGalleryClick);
         
-        obsCloseBtn.addEventListener('click', () => obsDetailModal.classList.remove('active'));
-        obsDetailModal.addEventListener('click', (e) => { if (e.target === obsDetailModal) obsDetailModal.classList.remove('active'); });
+        obsCloseBtn.addEventListener('click', () => obsDetailModal.classList.add('hidden'));
+        obsDetailModal.addEventListener('click', (e) => { if (e.target === obsDetailModal) obsDetailModal.classList.add('hidden'); });
 
-        // 🚨 게시물 제출 (롤백 및 덮어쓰기 방어 적용)
+        // 🚨 게시물 제출 (끼워넣기 저장 적용)
         function handlePostSubmit(type) {
             let reporterInput = type === 'plant' ? plantObsReporter : animalObsReporter;
             let dateInput = type === 'plant' ? plantObsDate : animalObsDate;
@@ -1025,35 +984,28 @@
             async function finalizePost() {
                 showLoading("사진을 안전하게 서버에 업로드하고 있습니다...");
                 
-                // 1. 내가 글을 쓰는 도중에 다른 친구가 글을 썼을 수 있으므로 최신 데이터를 다시 불러옴 (덮어쓰기 증발 완벽 방어)
-                await fetchRegionData(exploreCurrentPolyId);
-
-                if (!ecoData[exploreCurrentPolyId][type + 'Posts']) {
-                    ecoData[exploreCurrentPolyId][type + 'Posts'] = [];
-                }
-
-                // 2. 최신 배열에 내 사진 추가
-                ecoData[exploreCurrentPolyId][type + 'Posts'].push(newPost);
-                
-                // 3. 파이어베이스에 저장 시도
-                let isSaved = await syncToFirebase(exploreCurrentPolyId); 
-                
-                hideLoading();
-
-                if(isSaved !== false) {
+                try {
+                    // 🚨 덮어쓰기 대신 Firebase의 arrayUnion을 사용하여 기존 데이터 뒤에 새 데이터를 안전하게 쏙 끼워넣음
+                    await updateDoc(doc(db, "ecologyMap", exploreCurrentPolyId), {
+                        [type + 'Posts']: arrayUnion(newPost)
+                    });
+                    
                     reporterInput.value = '';
                     dateInput.value = '';
                     nameInput.value = '';
                     descInput.value = '';
                     imageInput.value = '';
                     
-                    renderBoard(type);
-                    updateOutputs();
                     showAlert("새로운 관찰 기록이 갤러리에 추가되었습니다!");
-                } else {
-                    // 용량 초과로 저장 실패 시 내가 방금 올린 임시 데이터만 깔끔하게 제거 (롤백 방어)
-                    ecoData[exploreCurrentPolyId][type + 'Posts'].pop();
+                } catch (e) {
+                    console.error("Firebase 저장 실패:", e); 
+                    if (e.code === 'resource-exhausted' || (e.message && e.message.includes('exceeds the maximum'))) {
+                        showAlert("🚨 사진 용량이 너무 커서 저장할 수 없습니다!\n최근 추가한 사진을 삭제하거나 더 작은 용량의 사진을 사용해주세요.");
+                    } else {
+                        showAlert("🚨 데이터 저장에 실패했습니다. 인터넷 연결을 확인해주세요.");
+                    }
                 }
+                hideLoading();
             }
 
             if (file) {
@@ -1061,8 +1013,9 @@
                 reader.onload = function(e) {
                     let img = new Image();
                     img.onload = function() {
-                        const MAX_WIDTH = 400; 
-                        const MAX_HEIGHT = 400; 
+                        // 1MB 제한 대비 극한의 최적화 (가로세로 300px, 화질 0.4)
+                        const MAX_WIDTH = 300; 
+                        const MAX_HEIGHT = 300; 
                         let width = img.width;
                         let height = img.height;
 
@@ -1084,7 +1037,7 @@
                         let ctx = canvas.getContext('2d');
                         ctx.drawImage(img, 0, 0, width, height);
 
-                        newPost.img = canvas.toDataURL('image/jpeg', 0.5);
+                        newPost.img = canvas.toDataURL('image/jpeg', 0.4);
                         finalizePost();
                     };
                     img.src = e.target.result;
@@ -1104,10 +1057,6 @@
             document.querySelectorAll('.map-marker').forEach(m => m.classList.remove('selected'));
             selectedPolyIdSpan.textContent = "선택 안됨";
             updatePropsBtn.classList.add('hidden');
-            outputModeLabel.textContent = "전체 데이터";
-            outputModeLabel.classList.replace('bg-orange-600', 'bg-gray-200');
-            outputModeLabel.classList.replace('text-white', 'text-gray-600');
-            updateOutputs();
         }
 
         function selectRegion(polyId) {
@@ -1136,14 +1085,11 @@
             }
 
             updatePropsBtn.classList.remove('hidden');
-            outputModeLabel.textContent = "선택된 구역만";
-            outputModeLabel.classList.replace('bg-gray-200', 'bg-pink-500');
-            outputModeLabel.classList.replace('text-gray-600', 'text-white');
-            updateOutputs();
         }
 
-        updatePropsBtn.addEventListener('click', () => {
+        updatePropsBtn.addEventListener('click', async () => {
             if(!currentlySelectedPolyId) return;
+            showLoading("속성 업데이트 중...");
             
             let emojiRadios = document.querySelector('input[name="m-emoji"]:checked');
             let emoji = emojiRadios ? emojiRadios.value : "🌳";
@@ -1153,24 +1099,24 @@
             let flowers = parseInt(document.getElementById('m-flower').value) || 0;
             let animals = parseInt(document.getElementById('m-animal').value) || 0;
 
-            if(ecoData[currentlySelectedPolyId]) {
-                ecoData[currentlySelectedPolyId].title = name;
-                ecoData[currentlySelectedPolyId].emoji = emoji;
-                ecoData[currentlySelectedPolyId].largeTrees = largeTrees;
-                ecoData[currentlySelectedPolyId].smallTrees = smallTrees;
-                ecoData[currentlySelectedPolyId].flowers = flowers;
-                ecoData[currentlySelectedPolyId].animals = animals;
-            }
+            let updatePayload = {
+                title: name,
+                emoji: emoji,
+                largeTrees: largeTrees,
+                smallTrees: smallTrees,
+                flowers: flowers,
+                animals: animals
+            };
 
-            let marker = document.querySelector(`.map-marker[data-linked-id="${currentlySelectedPolyId}"]`);
-            if(marker) {
-                marker.innerHTML = `<div class="marker-icon">${emoji}</div><span>${name}</span>`;
+            try {
+                await setDoc(doc(db, "ecologyMap", currentlySelectedPolyId), updatePayload, { merge: true });
+                showAlert(`[${name}] 구역의 속성이 저장되었습니다.`);
+            } catch (e) {
+                showAlert("저장에 실패했습니다.");
             }
-
-            syncToFirebase(currentlySelectedPolyId); 
-            showAlert(`[${name}] 구역의 속성이 저장되었습니다.`);
-            updateOutputs();
+            hideLoading();
         });
+
 
         document.querySelectorAll('.tool-btn').forEach(btn => {
             btn.addEventListener('click', () => {
@@ -1228,18 +1174,11 @@
             }
         });
 
-        // 🚨 숲 클릭 시에도 동기화 수행
         svgOverlay.addEventListener('mousedown', async (e) => {
             if (!isEditMode) {
                 let poly = e.target.closest('.region-polygon');
                 if (poly) {
                     const polyId = poly.getAttribute('data-id');
-                    
-                    // 최신 데이터 동기화 (로딩 표시)
-                    showLoading("최신 숲 정보를 불러오고 있습니다...");
-                    await fetchRegionData(polyId);
-                    hideLoading();
-
                     const data = ecoData[polyId];
                     if (data) {
                         document.getElementById('modal-title').textContent = data.title;
@@ -1318,7 +1257,6 @@
 
                 removeFormFirebase(polyId); 
                 renderHandles();
-                updateOutputs();
                 return;
             }
 
@@ -1353,21 +1291,15 @@
                 newMarker.innerHTML = `<div class="marker-icon">${emoji}</div><span>${name}</span>`;
                 mapWrapper.appendChild(newMarker);
 
-                if (!ecoData[polyId]) {
-                    ecoData[polyId] = { title: name, subtitle: '새 구역', desc: '설명이 필요합니다.', emoji: emoji, tags: [], largeTrees: largeTrees, smallTrees: smallTrees, flowers: flowers, animals: animals, plantPosts: [], animalPosts: [] };
-                } else {
-                    ecoData[polyId].title = name;
-                    ecoData[polyId].emoji = emoji;
-                    ecoData[polyId].largeTrees = largeTrees;
-                    ecoData[polyId].smallTrees = smallTrees;
-                    ecoData[polyId].flowers = flowers;
-                    ecoData[polyId].animals = animals;
-                    if(!ecoData[polyId].plantPosts) ecoData[polyId].plantPosts = [];
-                    if(!ecoData[polyId].animalPosts) ecoData[polyId].animalPosts = [];
+                let newPolyData = { title: name, subtitle: '새 구역', desc: '설명이 필요합니다.', emoji: emoji, tags: [], largeTrees: largeTrees, smallTrees: smallTrees, flowers: flowers, animals: animals, plantPosts: [], animalPosts: [] };
+                
+                if (ecoData[polyId]) {
+                    newPolyData.plantPosts = ecoData[polyId].plantPosts;
+                    newPolyData.animalPosts = ecoData[polyId].animalPosts;
                 }
                 
-                syncToFirebase(polyId); 
-                updateOutputs();
+                // 마커 추가 시에도 덮어쓰기 증발 방지를 위해 merge 적용
+                await setDoc(doc(db, "ecologyMap", polyId), newPolyData, { merge: true });
                 return;
             }
 
@@ -1389,7 +1321,6 @@
                     tempPolygon.setAttribute('points', pts + `${x},${y} `);
                 }
                 renderHandles();
-                updateOutputs();
             }
         });
 
@@ -1403,7 +1334,6 @@
                     selectRegion(marker.getAttribute('data-linked-id'));
                 } else if (currentTool === 'delete') {
                     marker.remove();
-                    updateOutputs();
                 }
             }
         });
@@ -1466,7 +1396,6 @@
                     currentPoly.setAttribute('points', pts.join(','));
                 }
                 renderHandles();
-                updateOutputs();
                 return;
             }
 
@@ -1495,7 +1424,6 @@
             let newStr = '';
             for(let i=0; i<pts.length; i+=2) newStr += `${pts[i]},${pts[i+1]} `;
             poly.setAttribute('points', newStr.trim());
-            updateOutputs();
         }
 
         function endDragPoint() {
@@ -1504,44 +1432,8 @@
             window.removeEventListener('mouseup', endDragPoint);
         }
 
+        // 실시간 동기화로 인해 우측 하단의 수동 코드는 사실상 불필요해졌으나, 만약을 위한 백업용으로 남겨두었습니다.
         function updateOutputs() {
-            let polyCode = '';
-            let markerCode = '';
-            let exportData = {};
-
-            if (currentlySelectedPolyId && currentTool === 'select') {
-                let p = document.querySelector(`.region-polygon[data-id="${currentlySelectedPolyId}"]`);
-                if (p) polyCode = `<polygon class="region-polygon" data-id="${p.getAttribute('data-id')}" points="${p.getAttribute('points')}" />\n`;
-                
-                let m = document.querySelector(`.map-marker[data-linked-id="${currentlySelectedPolyId}"]`);
-                if (m) {
-                    let clone = m.cloneNode(true);
-                    clone.classList.remove('selected'); 
-                    markerCode = `<div class="map-marker" data-linked-id="${m.getAttribute('data-linked-id')}" style="top: ${clone.style.top}; left: ${clone.style.left};">\n  ${clone.innerHTML}\n</div>\n`;
-                }
-                if (ecoData[currentlySelectedPolyId]) exportData[currentlySelectedPolyId] = ecoData[currentlySelectedPolyId];
-            } else {
-                document.querySelectorAll('.region-polygon').forEach(p => {
-                    polyCode += `<polygon class="region-polygon" data-id="${p.getAttribute('data-id')}" points="${p.getAttribute('points')}" />\n`;
-                });
-                document.querySelectorAll('.map-marker').forEach(m => {
-                    let clone = m.cloneNode(true);
-                    clone.classList.remove('selected');
-                    markerCode += `<div class="map-marker" data-linked-id="${m.getAttribute('data-linked-id')}" style="top: ${clone.style.top}; left: ${clone.style.left};">\n  ${clone.innerHTML}\n</div>\n\n`;
-                });
-                exportData = ecoData;
-            }
-
-            outPoly.value = polyCode.trim();
-            outMarker.value = markerCode.trim();
-            
-            if (currentlySelectedPolyId && currentTool === 'select') {
-                let singleDataStr = `// ${exportData[currentlySelectedPolyId].title} 데이터\n'${currentlySelectedPolyId}': ${JSON.stringify(exportData[currentlySelectedPolyId], null, 4)}`;
-                outData.value = singleDataStr;
-            } else {
-                outData.value = "const ecoData = " + JSON.stringify(exportData, null, 4) + ";";
-            }
-
             updateTotalStats(); 
         }
         
@@ -1568,13 +1460,8 @@
             exploreView.classList.add('hidden');
             mainView.classList.remove('hidden');
             toggleEditBtn.classList.remove('hidden'); 
-            
-            updateOutputs();
             window.scrollTo(0, 0);
         });
-
-        // 초기 실행
-        initData();
 
     </script>
 </body>
